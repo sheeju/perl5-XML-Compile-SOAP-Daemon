@@ -23,7 +23,7 @@ my %faultWriter;
 my @levelToReason = qw/ERROR WARNING NOTICE INFO TRACE/;
 
 =chapter NAME
-XML::Compile::SOAP::Daemon - base class for SOAP message servers
+XML::Compile::SOAP::Daemon - SOAP accepting server
 
 =chapter SYNOPSIS
  #### have a look in the examples directory!
@@ -35,7 +35,7 @@ XML::Compile::SOAP::Daemon - base class for SOAP message servers
  # daemon definitions from WSDL
  my $wsdl    = XML::Compile::WSDL11->new(...);
  $wsdl->importDefinitions(...); # more schemas
- $deamon->operationsFromWSDL($wsdl, handlers => ...);
+ $deamon->operationsFromWSDL($wsdl, callbacks => ...);
 
  # daemon definitions added manually
  my $soap11  = XML::Compile::SOAP11::Server->new(schemas => $wsdl->schemas);

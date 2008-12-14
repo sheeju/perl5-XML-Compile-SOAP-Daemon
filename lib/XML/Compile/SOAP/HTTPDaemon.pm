@@ -200,7 +200,7 @@ sub acceptResponse($$)
     my $resp   = HTTP::Response->new($status);
     $resp->protocol($request->protocol);  # match request
     my $s = $resp->content($xml->toString);
-    { use bytes; $self->header('Content-Length' => length $s); }
+    { use bytes; $resp->header('Content-Length' => length $s); }
     $self->headersForXML($resp);
 
     if(substr($request->method, 0, 2) eq 'M-')
@@ -215,7 +215,7 @@ sub soapFault($$$$)
     my $doc  = $self->SUPER::soapFault($version, $data);
     my $resp = HTTP::Response->new($rc, $abstract);
     my $s = $resp->content($doc->toString);
-    { use bytes; $self->header('Content-Length' => length $s); }
+    { use bytes; $resp->header('Content-Length' => length $s); }
     $self->headersForXML($resp);
     $resp;
 }
