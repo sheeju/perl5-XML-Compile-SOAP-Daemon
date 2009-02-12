@@ -5,28 +5,31 @@ package XML::Compile::SOAP::Daemon;
 our @ISA;   # filled-in at new().
 
 use Log::Report 'xml-compile-soap-daemon', syntax => 'SHORT';
+dispatcher SYSLOG => 'default';
 
-use XML::LibXML                  ();
-use XML::Compile::Util           qw/type_of_node/;
-use XML::Compile::SOAP::Util     qw/SOAP11ENV SOAP12ENV/;
-use XML::Compile::SOAP11::Server ();
-use XML::Compile::SOAP12::Server ();
+use XML::LibXML        ();
+use XML::Compile::Util qw/type_of_node/;
 
-use List::Util    qw/first/;
-use Time::HiRes   qw/time/;
+use List::Util         qw/first/;
+use Time::HiRes        qw/time/;
 
-# we use HTTP status definitions for each protocol
-use HTTP::Status  qw/RC_BAD_GATEWAY RC_NOT_IMPLEMENTED RC_SEE_OTHER/;
+# we use HTTP status definitions for each soap protocol
+use HTTP::Status       qw/RC_FORBIDDEN RC_NOT_IMPLEMENTED
+  RC_SEE_OTHER RC_NOT_ACCEPTABLE RC_UNPROCESSABLE_ENTITY
+  RC_NOT_IMPLEMENTED RC_NOT_FOUND/;
+
+# Net::Server error levels to Log::Report levels
+my @levelToReason = qw/ERROR WARNING NOTICE INFO TRACE/;
 
 my $parser        = XML::LibXML->new;
-my %faultWriter;
-my @levelToReason = qw/ERROR WARNING NOTICE INFO TRACE/;
 
 =chapter NAME
 XML::Compile::SOAP::Daemon - SOAP accepting server
 
 =chapter SYNOPSIS
  #### have a look in the examples directory!
+ use XML::Compile::SOAP::HTTPDaemon;
+ use XML::Compile::SOAP11;
 
  # Be warned that the daemon will be Net::Server based, which consumes
  # command-line arguments!
@@ -93,6 +96,8 @@ sub default_values()
    $def;
 }
 
+#-------------------------------------
+
 =chapter METHODS
 
 =section Constructors
@@ -114,13 +119,6 @@ You may pass your own M<Net::Server> compatible daemon, if you feel a need
 to initialize it or prefer an other one.  Preferrably, pass configuration
 settings to M<run()>.  You may also specify any M<Net::Server> compatible
 CLASS name.
-
-=option  support_soap 'SOAP11'|'SOAP12'|'ANY'|SOAP
-=default support_soap 'ANY'
-Which versions of SOAP to support.  Quite an amount of preparations
-must be made to start a server, which can be reduced by enforcing
-a single SOAP type, specified as version string or M<XML::Compile::SOAP>
-object.
 
 =cut
 
@@ -150,16 +148,18 @@ sub new(@)  # not called by HTTPDaemon
 
 sub init($)
 {   my ($self, $args) = @_;
-    my $support = delete $args->{support_soap} || 'ANY';
-    $self->{supported} = ref $support ? $support->version : $support;
 
-    foreach my $version ($self->soapVersions)
-    {   $self->isSupportedVersion($version) or next;
-        $faultWriter{$version}
-          = "XML::Compile::${version}::Server"->faultWriter;
+    if(my $support = delete $args->{support_soap})
+    {   # simply only load the protocol versions you want to accept.
+        error __x"new(support_soap} removed in 2.00";
     }
 
+    my @classes = XML::Compile::Operation->registered;
+    @classes   # explicit load required since 2.00
+        or warning "No protocol modules loaded.  Need XML::Compile::SOAP11?";
+
     $self->{output_charset} = delete $args->{output_charset} || 'UTF-8';
+    $self->{handler}        = {};
     $self;
 }
 
@@ -191,6 +191,7 @@ sub post_configure()
     $self->SUPER::post_configure;
 }
 
+# Overrule Net::Server's log() to translate it into Log::Report calls
 sub log($$@)
 {   my ($self, $level, $msg) = (shift, shift, shift);
     $msg = sprintf $msg, @_ if @_;
@@ -211,16 +212,6 @@ The character-set to be used for output documents.
 
 sub outputCharset() {shift->{output_charset}}
 
-=method isSupportedVersion ('SOAP11'|'SOAP12')
-Returns true if the soap version is supported, according to
-M<new(support_soap)>).
-=cut
-
-sub isSupportedVersion($)
-{   my $support = shift->{supported};
-    $support eq 'ANY' || $support eq shift();
-}
-
 =section Running the server
 
 =method run OPTIONS
@@ -229,63 +220,75 @@ as HASH.
 =cut
 
 sub run(@)
-{   my $self = shift;
-    $self->SUPER::run
-     ( no_client_stdout => 1    # it's a daemon, you know
-     , @_
-     , log_file         => undef # Net::Server should not mess with my preps
-     );
+{   my ($self, %args) = @_;
+    delete $args{log_file};      # Net::Server should not mess with my preps
+    $args{no_client_stdout} = 1; # it's a daemon, you know
+    $self->SUPER::run(%args);
 }
 
 =method process CLIENT, XMLIN
-The parsed XMLIN SOAP-structured message (an M<XML::LibXML::Element> or
-M<XML::LibXML::Document>), was received from the CLIENT (some extension
-specific object).  Returned is an XML document as answer.
+The XMLIN SOAP-structured message (an M<XML::LibXML::Element>,
+M<XML::LibXML::Document>, or XML as string), was received from the CLIENT
+(some extension specific object).
 
+Returned is an XML document as answer or a protocol specific ready
+response object (usually an error object).
 =cut
 
 # defined by Net::Server
 sub process_request(@) { panic "must be extended" }
 
-sub process($$$)
-{   my ($self, $request, $xmlin) = @_;
-    $xmlin    = $xmlin->documentElement
+sub process($)
+{   my ($self, $input) = @_;
+
+    my $xmlin;
+    if(ref $input eq 'SCALAR')
+    {   $xmlin = try { $parser->parse_string($$input) };
+        !$@ && $input
+            or return $self->faultInvalidXML($@->died)
+    }
+    else
+    {   $xmlin   = $input;
+    }
+    
+    $xmlin       = $xmlin->documentElement
         if $xmlin->isa('XML::LibXML::Document');
 
-    my $local = $xmlin->localName;
-    return $self->faultNotSoapMessage(type_of_node $xmlin)
-        if $local ne 'Envelope';
+    my $local    = $xmlin->localName;
+    $local eq 'Envelope'
+        or return $self->faultNotSoapMessage(type_of_node $xmlin);
 
-    my $envns = $xmlin->namespaceURI || '';
-    my $version
-      = $envns eq SOAP11ENV ? 'SOAP11'
-      : $envns eq SOAP12ENV ? 'SOAP12'
-      : return $self->faultUnsupportedSoapVersion($envns);
+    my $envns    = $xmlin->namespaceURI || '';
+    my $proto    = XML::Compile::Operation->fromEnvelope($envns)
+        or return $self->faultUnsupportedSoapVersion($envns);
+    # proto is a XML::Compile::SOAP*::Operation
+    my $server   = $proto->serverClass;
 
-    my $info  = XML::Compile::SOAP->messageStructure($xmlin);
-    $info->{soap_version} = $version;
+    my $info     = XML::Compile::SOAP->messageStructure($xmlin);
+    my $version  = $info->{soap_version} = $proto->version;
+    my $handlers = $self->{handler}{$version} || {};
 
-    my $handlers = $self->{$version} || {};
-
-    keys %$handlers;  # reset each!
+    keys %$handlers;  # reset each()
     while(my ($name, $handler) = each %$handlers)
     {
         my $xmlout = $handler->($name, $xmlin, $info);
         defined $xmlout or next;
 
         trace "call $version $name";
-        return $self->acceptResponse($request, $xmlout);
+        return $xmlout;
     }
 
     my $bodyel = $info->{body}[0] || '(none)';
     my @other  = sort grep {$_ ne $version && keys %{$self->{$_}}}
         $self->soapVersions;
 
-    return $self->faultTryOtherProtocol($version, $bodyel, \@other)
+    return $self->soapFault(RC_SEE_OTHER, 'SOAP protocol not in use'
+             , $server->faultTryOtherProtocol($bodyel, \@other))
         if @other;
 
     my @available = sort keys %$handlers;
-    $self->faultMessageNotRecognized($version, $bodyel, \@available);
+    $self->soapFault(RC_NOT_FOUND, 'message not recognized'
+      , $server->faultMessageNotRecognized($bodyel, \@available));
 }
 
 =section Preparations
@@ -297,9 +300,9 @@ WSDLs into one server, simply by calling this method repeatedly.
 
 =option  callbacks HASH
 =default callbacks {}
-The keys are the port names, as defined in the WSDL.  The values are
-CODE references which are called in case a message is received which
-seems to be addressing the port (this is a guess). See L</Operation handlers>
+The keys are the port names, as defined in the WSDL.  The values are CODE
+references which are called in case a message is received which seems
+to be addressing the port (this is a guess). See L</Operation handlers>
 
 =option  default_callback CODE
 =default default_callback <produces fault reply>
@@ -313,51 +316,43 @@ sub operationsFromWSDL($@)
     my $callbacks = $args{callbacks} || {};
     my %names;
 
-    my $default = $args{default_callback}
-               || sub {$self->faultNotImplemented(@_)};
+    my $default = $args{default_callback};
 
-    foreach my $version ($self->soapVersions)
-    {   $self->isSupportedVersion($version) or next;
-
-        my $soap = "XML::Compile::${version}::Server"
-           ->new(schemas => $wsdl->schemas);
-
-        my @ops  = $wsdl->operations(produce => 'OBJECTS', soap => $soap);
-        unless(@ops)
-        {   info __x"no operations for {soap}; skipped", soap => $version;
-            next;
-        }
-
-        foreach my $op (@ops)
-        {   my $name = $op->name;
-            $names{$name}++;
-            my $callback = $callbacks->{$name} || $default;
-            my $has_callback = defined $callbacks->{$name};
-
-            ref $callback eq 'CODE'
-                or error __x"callback {name} must provide a CODE ref"
-                     , name => $name;
-
-            my $code = $op->compileHandler
-              ( soap     => $soap
-              , callback => $callback
-              );
-
-            if($has_callback)
-            {   trace __x"add handler for {soap} named {name}"
-                  , soap => $version, name => $name;
-            }
-            else
-            {   trace __x"add stub handler for {soap} named {name}"
-                  , soap => $version, name => $name;
-            }
-
-            $self->addHandler($name, $version, $code);
-        }
-
-        info __x"added {nr} operations for {soap} from WSDL"
-          , nr => scalar @ops, soap => $version;
+    my @ops  = $wsdl->operations;
+    unless(@ops)
+    {   info __x"no operations in WSDL";
+        next;
     }
+
+    foreach my $op (@ops)
+    {   my $name = $op->name;
+        $names{$name}++;
+        my $code;
+
+        if(my $callback = $callbacks->{$name})
+        {   UNIVERSAL::isa($callback, 'CODE')
+               or error __x"callback {name} must provide a CODE ref"
+                    , name => $name;
+
+            trace __x"add handler for operation {name}", name => $name;
+            $code = $op->compileHandler(callback => $callback);
+        }
+        else
+        {   trace __x"add stub handler for operation {name}", name => $name;
+            my $server  = $op->serverClass;
+            my $handler = $default
+              || sub { $self->soapFault(RC_NOT_IMPLEMENTED
+                         , 'procedure stub called'
+                         , $server->faultNotImplemented($name));
+                     };
+
+            $code = $op->compileHandler(callback => $handler);
+        }
+
+        $self->addHandler($name, $op, $code);
+    }
+
+    info __x"added {nr} operations from WSDL", nr => (scalar @ops);
 
     # the same handler can be used for different soap versions, so we
     # should not complain too early.
@@ -380,7 +375,7 @@ sub addHandler($$$)
 {   my ($self, $name, $soap, $code) = @_;
 
     my $version = ref $soap ? $soap->version : $soap;
-    $self->{$version}{$name} = $code;
+    $self->{handler}{$version}{$name} = $code;
 }
 
 =section Helpers
@@ -398,32 +393,14 @@ Returns all the handler names for a certain soap version.
 sub handlers($)
 {   my ($self, $soap) = @_;
     my $version = ref $soap ? $soap->version : $soap;
-    my $table   = $self->{$version} || {};
+    my $table   = $self->{handler}{$version} || {};
     keys %$table;
 }
 
 =method soapVersions
 =cut
 
-sub soapVersions() { qw/SOAP11 SOAP12/ }
-
-=method inputToXML CLIENT, ACTION, XML-STRING-REF
-Translate a textual XML message into an XML::LibXML tree.
-=cut
-
-sub inputToXML($$$)
-{   my ($self, $client, $action, $strref) = @_;
-
-    my $input = try { $parser->parse_string($$strref) };
-    if($@ || !$input)
-    {   info __x"request from {client}, {action} parse error: {msg}"
-           , client => $client, action => $action, msg => $@;
-        return undef;
-    }
-
-    $input;
-}
-
+sub soapVersions() { sort keys %{shift->{handler}} }
 
 =method printIndex [FILEHANDLE]
 Print a table which shows the messages that the server can handle,
@@ -443,6 +420,15 @@ sub printIndex(;$)
     }
 }
 
+=method faultInvalidXML ERROR
+=cut
+
+sub faultInvalidXML($)
+{   my ($self, $error) = @_;
+    my $text = __x"The XML cannot be parsed: {error}", error => $error;
+    $self->protocolError(RC_UNPROCESSABLE_ENTITY, 'XML syntax error', $text);
+}
+
 =method faultNotSoapMessage NODETYPE
 =cut
 
@@ -453,109 +439,33 @@ sub faultNotSoapMessage($)
         __x"The message was XML, but not SOAP; not an Envelope but `{type}'"
       , type => $type;
 
-    $self->soapFault
-      ( 'SOAP11'
-      , XML::Compile::SOAP11::Server->faultMessageNotRecognized($text)
-      , RC_BAD_GATEWAY
-      , 'message not SOAP'
-      );
+    $self->protocolError(RC_FORBIDDEN, 'message not SOAP', $text);
 }
 
 =method faultUnsupportedSoapVersion ENV_NS
+Produces a text message, because we do not know how to produce
+an error in a SOAP which we do not understand.
 =cut
 
 sub faultUnsupportedSoapVersion($)
 {   my ($self, $envns) = @_;
 
-    my $text =
-        __x"The soap version `{envns}' is not supported"
-      , envns => $envns;
+    my $text = __x"The soap version `{envns}' is not supported"
+                  , envns => $envns;
 
-    $self->soapFault
-      ( 'SOAP11'
-      , XML::Compile::SOAP11::Server->faultUnsupportedSoapVersion($text)
-      , RC_BAD_GATEWAY
-      , 'SOAP version not supported'
-      );
+    $self->protocolError(RC_NOT_IMPLEMENTED, 'SOAP version not supported', $text);
 }
 
-=method acceptResponse REQUEST, XML
-Returns an implementation dependent wrapper around a produced response.
+=method protocolError STATUS, STATUS_TEXT, MESSAGE
+Respond to the caller that the received request does not look like
+anything we can process automatically.  The STATUS and STATUS_TEXT
+are like HTTP, but may be translated into some other transport
+protocol convension.
 =cut
 
-sub acceptResponse($) { $_[2] }
-
-=method soapFault SOAPVERSION, DATA, [RC, ABSTRACT]
-Create the fault document.  The error code (RC) is not always available,
-as is an ABSTRACT description of the problem.
-=cut
-
-sub soapFault($$$$)
-{   my ($self, $version, $data, $rc, $abstract) = @_;
-    my $writer = $faultWriter{$version}
-        or panic "soapFault no writer for $version";
-    $writer->($data);
-}
-
-=method faultMessageNotRecognized SOAPVERSION, BODYELEMENT, DEFINED
-The SOAP VERSION, the type of the first BODY ELEMENT, and the ARRAY of
-DEFINED message names.
-=cut
-
-sub faultMessageNotRecognized($$$)
-{   my ($self, $version, $name, $handlers) = @_;
-
-    my $text =
-       __x "{version} body element {name} not recognized, available are {def}"
-        , version => $version, name => $name, def => $handlers;
-
-    $self->soapFault
-      ( $version,
-      , "XML::Compile::${version}::Server"->faultMessageNotRecognized($text)
-      , RC_NOT_IMPLEMENTED
-      , 'message not recognized'
-      );
-}
-
-=method faultTryOtherProtocol SOAPVERSION, BODYELEMENT, OTHER
-The SOAP VERSION, the type of the first BODY ELEMENT, and an ARRAY of OTHER
-protocols are passed.
-=cut
-
-sub faultTryOtherProtocol($$$)
-{   my ($self, $version, $name, $other) = @_;
-
-    my $text =
-      __x"body element {name} not available in {version}, try {other}"
-        , name => $name, version => $version, other => $other;
-
-    $self->soapFault
-      ( $version,
-      , "XML::Compile::${version}::Server"->faultTryOtherProtocol($text)
-      , RC_SEE_OTHER
-      , 'SOAP protocol not in use'
-      );
-}
-
-=method faultNotImplemented NAME, XML, INFO
-Called as any handler, with the procedure NAME (probably the portType
-from the WSDL), the incoming XML message, and structural message INFO.
-=cut
-
-sub faultNotImplemented($$$)
-{   my ($self, $name, $xml, $info) = @_;
-    my $version = $info->{soap_version};
-
-    my $text =
-      __x"procedure {name} for {version} is not yet implemented"
-        , name => $name, version => $version;
-
-    $self->soapFault
-      ( $version,
-      , "XML::Compile::${version}::Server"->faultNotImplemented($text)
-      , RC_NOT_IMPLEMENTED
-      , 'procedure stub called'
-      );
+sub protocolError($$$)
+{   my ($self, $rc, $abstract, $text) = @_;
+    info "[$rc] $text";
 }
 
 =chapter DETAILS

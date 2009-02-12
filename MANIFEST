@@ -13,5 +13,6 @@ examples/namesservice/servtempl.pl
 lib/XML/Compile/SOAP/Daemon.pm
 lib/XML/Compile/SOAP/HTTPDaemon.pm
 t/01use.t
+t/10fault.t
 t/99pod.t
 t/TestTools.pm
