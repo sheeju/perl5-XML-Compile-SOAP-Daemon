@@ -271,24 +271,24 @@ sub process($)
     keys %$handlers;  # reset each()
     while(my ($name, $handler) = each %$handlers)
     {
-        my $xmlout = $handler->($name, $xmlin, $info);
+        my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
         defined $xmlout or next;
 
-        trace "call $version $name";
-        return $xmlout;
+        trace "data ready for $version $name";
+        return ($rc, $msg, $xmlout);
     }
 
     my $bodyel = $info->{body}[0] || '(none)';
     my @other  = sort grep {$_ ne $version && keys %{$self->{$_}}}
         $self->soapVersions;
 
-    return $self->soapFault(RC_SEE_OTHER, 'SOAP protocol not in use'
+    return (RC_SEE_OTHER, 'SOAP protocol not in use'
              , $server->faultTryOtherProtocol($bodyel, \@other))
         if @other;
 
     my @available = sort keys %$handlers;
-    $self->soapFault(RC_NOT_FOUND, 'message not recognized'
-      , $server->faultMessageNotRecognized($bodyel, \@available));
+    ( RC_NOT_FOUND, 'message not recognized'
+    , $server->faultMessageNotRecognized($bodyel, \@available));
 }
 
 =section Preparations
@@ -313,7 +313,7 @@ be returned.  See L</Operation handlers>
 
 sub operationsFromWSDL($@)
 {   my ($self, $wsdl, %args) = @_;
-    my $callbacks = $args{callbacks} || {};
+    my %callbacks = $args{callbacks} ? %{$args{callbacks}} : ();
     my %names;
 
     my $default = $args{default_callback};
@@ -321,7 +321,7 @@ sub operationsFromWSDL($@)
     my @ops  = $wsdl->operations;
     unless(@ops)
     {   info __x"no operations in WSDL";
-        next;
+        return;
     }
 
     foreach my $op (@ops)
@@ -329,20 +329,20 @@ sub operationsFromWSDL($@)
         $names{$name}++;
         my $code;
 
-        if(my $callback = $callbacks->{$name})
+        if(my $callback = delete $callbacks{$name})
         {   UNIVERSAL::isa($callback, 'CODE')
                or error __x"callback {name} must provide a CODE ref"
                     , name => $name;
 
-            trace __x"add handler for operation {name}", name => $name;
+            trace __x"add handler for operation `{name}'", name => $name;
             $code = $op->compileHandler(callback => $callback);
         }
         else
-        {   trace __x"add stub handler for operation {name}", name => $name;
+        {   trace __x"add stub handler for operation `{name}'", name => $name;
             my $server  = $op->serverClass;
             my $handler = $default
-              || sub { $self->soapFault(RC_NOT_IMPLEMENTED
-                         , 'procedure stub called'
+              || sub { $self->makeResponse(RC_NOT_IMPLEMENTED
+                         , 'procedure stub used'
                          , $server->faultNotImplemented($name));
                      };
 
@@ -354,11 +354,10 @@ sub operationsFromWSDL($@)
 
     info __x"added {nr} operations from WSDL", nr => (scalar @ops);
 
-    # the same handler can be used for different soap versions, so we
-    # should not complain too early.
-    delete $callbacks->{$_} for keys %names;
-    error __x"no port with name {names}", names => keys %$callbacks
-        if keys %$callbacks;
+    warning __x"no operation for callback handler `{name}'", name => $_
+        for sort keys %callbacks;
+
+    $self;
 }
 
 =method addHandler NAME, SOAP, CODE
@@ -426,7 +425,7 @@ sub printIndex(;$)
 sub faultInvalidXML($)
 {   my ($self, $error) = @_;
     my $text = __x"The XML cannot be parsed: {error}", error => $error;
-    $self->protocolError(RC_UNPROCESSABLE_ENTITY, 'XML syntax error', $text);
+    (RC_UNPROCESSABLE_ENTITY, 'XML syntax error', $text);
 }
 
 =method faultNotSoapMessage NODETYPE
@@ -439,7 +438,7 @@ sub faultNotSoapMessage($)
         __x"The message was XML, but not SOAP; not an Envelope but `{type}'"
       , type => $type;
 
-    $self->protocolError(RC_FORBIDDEN, 'message not SOAP', $text);
+    (RC_FORBIDDEN, 'message not SOAP', $text);
 }
 
 =method faultUnsupportedSoapVersion ENV_NS
@@ -453,19 +452,7 @@ sub faultUnsupportedSoapVersion($)
     my $text = __x"The soap version `{envns}' is not supported"
                   , envns => $envns;
 
-    $self->protocolError(RC_NOT_IMPLEMENTED, 'SOAP version not supported', $text);
-}
-
-=method protocolError STATUS, STATUS_TEXT, MESSAGE
-Respond to the caller that the received request does not look like
-anything we can process automatically.  The STATUS and STATUS_TEXT
-are like HTTP, but may be translated into some other transport
-protocol convension.
-=cut
-
-sub protocolError($$$)
-{   my ($self, $rc, $abstract, $text) = @_;
-    info "[$rc] $text";
+    (RC_NOT_IMPLEMENTED, 'SOAP version not supported', $text);
 }
 
 =chapter DETAILS
