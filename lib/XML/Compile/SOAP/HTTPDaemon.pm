@@ -95,8 +95,9 @@ sub process_request()
         my $timeleft;
         while(($timeleft = $expires - time) > 0.01)
         {   alarm $timeleft;
-            my $request  = $connection->get_request or last;
+            my $request  = $connection->get_request;
             alarm 0;
+            $request or last;
 
             my $response = $self->runRequest($request, $connection);
             $connection->force_last_request if $maxmsgs==1;
