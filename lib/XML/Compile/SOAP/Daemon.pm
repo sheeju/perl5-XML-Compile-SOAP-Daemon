@@ -33,17 +33,17 @@ XML::Compile::SOAP::Daemon - SOAP accepting server
 
  # Be warned that the daemon will be Net::Server based, which consumes
  # command-line arguments!
- my $deamon  = XML::Compile::SOAP::HTTPDaemon->new;
+ my $daemon  = XML::Compile::SOAP::HTTPDaemon->new;
 
  # daemon definitions from WSDL
  my $wsdl    = XML::Compile::WSDL11->new(...);
  $wsdl->importDefinitions(...); # more schemas
- $deamon->operationsFromWSDL($wsdl, callbacks => ...);
+ $daemon->operationsFromWSDL($wsdl, callbacks => ...);
 
  # daemon definitions added manually
  my $soap11  = XML::Compile::SOAP11::Server->new(schemas => $wsdl->schemas);
  my $handler = $soap11->compileHandler(...);
- $deamon->addHandler('getInfo', $soap11, $handler);
+ $daemon->addHandler('getInfo', $soap11, $handler);
 
  # see what is defined:
  $daemon->printIndex;
@@ -66,7 +66,7 @@ M<XML::Compile::SOAP::HTTPDaemon>, for transport over HTTP.
 
 =back
 
-The deamon can handle various kinds of SOAP protocols at the same time,
+The daemon can handle various kinds of SOAP protocols at the same time,
 when possible hidden from the user of this module.
 
 If you have a WSDL describing your procedures, then the only thing you
@@ -226,10 +226,14 @@ sub run(@)
     $self->SUPER::run(%args);
 }
 
-=method process CLIENT, XMLIN
+=method process CLIENT, XMLIN, REQUEST, ACTION
 The XMLIN SOAP-structured message (an M<XML::LibXML::Element>,
 M<XML::LibXML::Document>, or XML as string), was received from the CLIENT
 (some extension specific object).
+
+The full REQUEST is passed in, however its format depends on the
+kind of server. The ACTION parameter relates to the soapAction header
+field which may be available in some form.
 
 Returned is an XML document as answer or a protocol specific ready
 response object (usually an error object).
@@ -358,9 +362,9 @@ sub operationsFromWSDL($@)
 }
 
 =method addHandler NAME, SOAP, CODE
-The SOAP value is C<SOAP11>, C<SOAP12>, or a SOAP server object.  The CODE
-reference is called with the incoming document (an XML::LibXML::Document)
-of the received input message.
+The SOAP value is C<SOAP11>, C<SOAP12>, or a SOAP server object or and
+SOAP Operation object.  The CODE reference is called with the incoming
+document (an XML::LibXML::Document) of the received input message.
 
 In case the handler does not understand the message, it should
 return undef.  Otherwise, it must return a correct answer message as
@@ -408,7 +412,7 @@ sub printIndex(;$)
     my $fh   = shift || \*STDOUT;
 
     foreach my $version ($self->soapVersions)
-    {   my @handlers = $self->handlers;
+    {   my @handlers = $self->handlers($version);
         @handlers or next;
 
         local $" = "\n   ";
@@ -513,7 +517,7 @@ XML structure.  This could be a Fault, like shown in the next section.
 Please take a look at the scripts in the example directory within
 the distribution.
 
-=subsection Returning errors
+=subsection Returning general errors
 
 To have a handler return an error, leave the callback with something
 like this:
@@ -533,7 +537,7 @@ like this:
           }
        , _RETURN_CODE => 404
        , _RETURN_TEXT => 'sorry, not found'
-     };
+       };
  }
 
 Fault codes are "prefix:error-name", XML::Compile finds the right prefix
@@ -552,6 +556,25 @@ change the HTTP response (and maybe other protocol headers in the future).
 These can also be used with valid answers, not limited to errors. There
 is no clear definition how SOAP faults and HTTP return codes should work
 together for user errors.
+
+=subsection Returning private errors
+
+In a WSDL, we can specify own fault types. These defined elements descripe
+the C<detail> component of the message.
+
+To return such an error, you have to figure-out how the fault part is
+named. Often, the name simply is C<fault>.  Then, your handle has to
+return a Fault structure where the detail refers to a HASH with data
+matching the need for the fault.  Example:
+
+  return
+  +{ fault =>   # the name of the fault part, often "fault"
+       { faultcode   => pack_type(SOAP11ENV, 'Server')
+       , faultstring => 'any-ns.WentWrong'
+       , faultactor  => $soap->role
+       , detail      => { message => 'Hello, World!' }
+       }
+   };
 
 =cut
 

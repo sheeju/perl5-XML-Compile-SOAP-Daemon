@@ -141,15 +141,11 @@ sub runRequest($$)
           , "content-type seems to be $media, must be some XML");
 
     my $action   = $self->actionFromHeader($request);
-    defined $action
-        or return $self->makeResponse($request, RC_EXPECTATION_FAILED
-          , 'not SOAP', "soap requires an soapAction header field");
-
     my $ct       = $request->header('Content-Type');
     my $charset  = $ct =~ m/\;\s*type\=(["']?)([\w-]*)\1/ ? $2: 'utf-8';
     my $xmlin    = $request->decoded_content(charset => $charset, ref => 1);
 
-    my ($status, $msg, $out) = $self->process($xmlin);
+    my ($status, $msg, $out) = $self->process($xmlin, $request, $action);
     $self->makeResponse($request, $status, $msg, $out);
 }
 
