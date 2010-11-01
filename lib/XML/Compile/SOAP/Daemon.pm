@@ -30,6 +30,7 @@ XML::Compile::SOAP::Daemon - SOAP accepting server
  #### have a look in the examples directory!
  use XML::Compile::SOAP::HTTPDaemon;
  use XML::Compile::SOAP11;
+ use XML::Compile::SOAP::WSA;  # optional
 
  # Be warned that the daemon will be Net::Server based, which consumes
  # command-line arguments!
@@ -120,6 +121,37 @@ to initialize it or prefer an other one.  Preferrably, pass configuration
 settings to M<run()>.  You may also specify any M<Net::Server> compatible
 CLASS name.
 
+=option  wsa_action_input HASH|ARRAY
+=default wsa_action_input {}
+The keys are port names, the values are strings which are used by
+clients to indicate which server operation they want to use. Often,
+an WSDL contains this information in C<wsaw:Action> attributes; that
+info is added to this HASH automatically.
+
+=option  wsa_action_output HASH|ARRAY
+=default wsa_action_output {}
+The keys are port names, the values are strings which the server will
+add to replies to the client. Often, an WSDL contains this information
+in C<wsaw:Action> attributes.
+
+=option  soap_action_input HASH|ARRAY
+=default soap_action_input {}
+The keys are port names, with as value the related SOAPAction header
+field content (without quotes). Often, these SOAPAction fields originate
+from the WSDL.
+
+=option  accept_slow_select BOOLEAN
+=default accept_slow_select <true>
+Traditional SOAP does not have a simple way to find-out which operation
+is being called. The only way to figure-out which operation is needed,
+is by trying all defined operations... until one matches.
+
+Later, people started to use soapAction (which was officially only
+for proxies) and then the WSA header extension. Both of them make
+it easy to find the right handler one on one.
+
+Disabling C<accept_slow_select> will protect you againts various
+forms of DoS-attacks, however is often not possible.
 =cut
 
 sub new(@)  # not called by HTTPDaemon
@@ -143,7 +175,15 @@ sub new(@)  # not called by HTTPDaemon
 
     # Upgrade daemon, wow Perl!
     @ISA = ref $daemon;
-    (bless $daemon, $class)->init(\%args);
+    my $self = (bless $daemon, $class)->init(\%args);
+
+    $self->{accept_slow_select}
+      = exists $args{accept_slow_select} ? $args{accept_slow_select} : 1; 
+
+    $self->addWsaTable(INPUT  => $args{wsa_action_input});
+    $self->addWsaTable(OUTPUT => $args{wsa_action_output});
+    $self->addSoapAction($args{soap_action_input});
+    $self;
 }
 
 sub init($)
@@ -154,7 +194,7 @@ sub init($)
         error __x"new(support_soap} removed in 2.00";
     }
 
-    my @classes = XML::Compile::Operation->registered;
+    my @classes = XML::Compile::SOAP::Operation->registered;
     @classes   # explicit load required since 2.00
         or warning "No protocol modules loaded.  Need XML::Compile::SOAP11?";
 
@@ -212,6 +252,42 @@ The character-set to be used for output documents.
 
 sub outputCharset() {shift->{output_charset}}
 
+=method addWsaTable ('INPUT'|'OUTPUT'), [HASH|PAIRS]
+Map operation name onto respectively server-input or server-output
+messages, used for C<wsa:Action> fields in the header. Usually, these
+values are automatically taken from the WSDL (but only if the WSA
+extension is loaded).
+=cut
+
+sub addWsaTable($@)
+{   my ($self, $dir) = (shift, shift);
+    my $h = @_==1 ? shift : { @_ };
+    my $t = $dir eq 'INPUT'  ? ($self->{wsa_input}  ||= {})
+          : $dir eq 'OUTPUT' ? ($self->{wsa_output} ||= {})
+          : error __x("addWsaTable requires 'INPUT' or 'OUTPUT', not {got}"
+              , got => $dir);
+
+    while(my($op, $action) = each %$h) { $t->{$op} ||= $action }
+    $t;
+}
+
+=method addSoapAction HASH|PAIRS
+Map SOAPAction headers only operations. You do not need to map
+explicitly when the info can be derived from the WSDL.
+=cut
+
+sub addSoapAction(@)
+{   my $self = shift;
+    my $h = @_==1 ? shift : { @_ };
+    my $t = $self->{sa_input}     ||= {};
+    my $r = $self->{sa_input_rev} ||= {};
+    while(my($op, $action) = each %$h)
+    {   $t->{$op}     ||= $action;
+        $r->{$action} ||= $op;
+    }
+    $t;
+}
+
 =section Running the server
 
 =method run OPTIONS
@@ -223,6 +299,7 @@ sub run(@)
 {   my ($self, %args) = @_;
     delete $args{log_file};      # Net::Server should not mess with my preps
     $args{no_client_stdout} = 1; # it's a daemon, you know
+    $self->{wsa_input_rev}  = +{ reverse %{$self->{wsa_input}} };
     $self->SUPER::run(%args);
 }
 
@@ -243,7 +320,7 @@ response object (usually an error object).
 sub process_request(@) { panic "must be extended" }
 
 sub process($)
-{   my ($self, $input) = @_;
+{   my ($self, $input, $req, $soapaction) = @_;
 
     my $xmlin;
     if(ref $input eq 'SCALAR')
@@ -252,34 +329,66 @@ sub process($)
             or return $self->faultInvalidXML($@->died)
     }
     else
-    {   $xmlin   = $input;
+    {   $xmlin = $input;
     }
     
-    $xmlin       = $xmlin->documentElement
+    $xmlin     = $xmlin->documentElement
         if $xmlin->isa('XML::LibXML::Document');
 
-    my $local    = $xmlin->localName;
+    my $local  = $xmlin->localName;
     $local eq 'Envelope'
         or return $self->faultNotSoapMessage(type_of_node $xmlin);
 
-    my $envns    = $xmlin->namespaceURI || '';
-    my $proto    = XML::Compile::Operation->fromEnvelope($envns)
+    my $envns  = $xmlin->namespaceURI || '';
+    my $proto  = XML::Compile::SOAP::Operation->fromEnvelope($envns)
         or return $self->faultUnsupportedSoapVersion($envns);
     # proto is a XML::Compile::SOAP*::Operation
-    my $server   = $proto->serverClass;
+    my $server = $proto->serverClass;
 
-    my $info     = XML::Compile::SOAP->messageStructure($xmlin);
+    my $info   = XML::Compile::SOAP->messageStructure($xmlin);
     my $version  = $info->{soap_version} = $proto->version;
     my $handlers = $self->{handler}{$version} || {};
 
-    keys %$handlers;  # reset each()
-    while(my ($name, $handler) = each %$handlers)
-    {
-        my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
-        defined $xmlout or next;
+    # Try to resolve operation via WSA
+    my $wsa_in   = $self->{wsa_input_rev};
+    if(my $wsa_action = $info->{wsa_action})
+    {   if(my $name = $wsa_in->{$wsa_action})
+        {   my $handler = $handlers->{$name};
+            local $info->{selected_by} = 'wsa-action';
+            my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
+            if($xmlout)
+            {   trace "data ready for $version $name, via wsa $wsa_action";
+                return ($rc, $msg, $xmlout);
+            }
+        }
+    }
 
-        trace "data ready for $version $name";
-        return ($rc, $msg, $xmlout);
+    # Try to resolve operation via soapAction
+    my $sa = $self->{sa_input_rev};
+    if(defined $soapaction && $soapaction =~ m/^\s*(["'])?(.+)\1\s*$/)
+    {   if(my $name = $sa->{$1})
+        {   my $handler = $handlers->{$name};
+            local $info->{selected_by} = 'soap-action';
+            my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
+            if($xmlout)
+            {   trace "data ready for $version $name, via sa $soapaction";
+                return ($rc, $msg, $xmlout);
+            }
+        }
+    }
+
+    # Last resort, try each of the operations for the first which
+    # can be parsed correctly.
+    if($self->{accept_slow_select})
+    {   keys %$handlers;  # reset each()
+        $info->{selected_by} = 'attempt all';
+        while(my ($name, $handler) = each %$handlers)
+        {   my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
+            defined $xmlout or next;
+
+            trace "data ready for $version $name";
+            return ($rc, $msg, $xmlout);
+        }
     }
 
     my $bodyel = $info->{body}[0] || '(none)';
@@ -292,7 +401,7 @@ sub process($)
 
     my @available = sort keys %$handlers;
     ( RC_NOT_FOUND, 'message not recognized'
-    , $server->faultMessageNotRecognized($bodyel, \@available));
+    , $server->faultMessageNotRecognized($bodyel, $soapaction, \@available));
 }
 
 =section Preparations
@@ -305,8 +414,8 @@ WSDLs into one server, simply by calling this method repeatedly.
 =option  callbacks HASH
 =default callbacks {}
 The keys are the port names, as defined in the WSDL.  The values are CODE
-references which are called in case a message is received which seems
-to be addressing the port (this is a guess). See L</Operation handlers>
+references which are called in case a message is received which is
+addressing the port (this is a guess). See L</Operation handlers>
 
 =option  default_callback CODE
 =default default_callback <produces fault reply>
@@ -317,10 +426,12 @@ be returned.  See L</Operation handlers>
 
 sub operationsFromWSDL($@)
 {   my ($self, $wsdl, %args) = @_;
-    my %callbacks = $args{callbacks} ? %{$args{callbacks}} : ();
+    my %callbacks  = $args{callbacks} ? %{$args{callbacks}} : ();
     my %names;
 
-    my $default = $args{default_callback};
+    my $default_cb = $args{default_callback};
+    my $wsa_input  = $self->{wsa_input};
+    my $wsa_output = $self->{wsa_output};
 
     my @ops  = $wsdl->operations;
     unless(@ops)
@@ -344,13 +455,19 @@ sub operationsFromWSDL($@)
         else
         {   trace __x"add stub handler for operation `{name}'", name => $name;
             my $server  = $op->serverClass;
-            my $handler = $default
+            my $handler = $default_cb
               || sub { $server->faultNotImplemented($name) };
 
             $code = $op->compileHandler(callback => $handler);
         }
 
         $self->addHandler($name, $op, $code);
+
+        if($op->can('wsaAction'))
+        {   $wsa_input->{$name}  ||= $op->wsaAction('INPUT');
+            $wsa_output->{$name} ||= $op->wsaAction('OUTPUT');
+        }
+        $self->addSoapAction($name, $op->soapAction);
     }
 
     info __x"added {nr} operations from WSDL", nr => (scalar @ops);
@@ -425,8 +542,8 @@ sub printIndex(;$)
 
 sub faultInvalidXML($)
 {   my ($self, $error) = @_;
-    my $text = __x"The XML cannot be parsed: {error}", error => $error;
-    (RC_UNPROCESSABLE_ENTITY, 'XML syntax error', $text);
+    ( RC_UNPROCESSABLE_ENTITY, 'XML syntax error'
+    , __x("The XML cannot be parsed: {error}", error => $error));
 }
 
 =method faultNotSoapMessage NODETYPE
@@ -434,12 +551,9 @@ sub faultInvalidXML($)
 
 sub faultNotSoapMessage($)
 {   my ($self, $type) = @_;
-
-    my $text =
-        __x"The message was XML, but not SOAP; not an Envelope but `{type}'"
-      , type => $type;
-
-    (RC_FORBIDDEN, 'message not SOAP', $text);
+    ( RC_FORBIDDEN, 'message not SOAP'
+    , __x( "The message was XML, but not SOAP; not an Envelope but `{type}'"
+         , type => $type));
 }
 
 =method faultUnsupportedSoapVersion ENV_NS
@@ -449,11 +563,8 @@ an error in a SOAP which we do not understand.
 
 sub faultUnsupportedSoapVersion($)
 {   my ($self, $envns) = @_;
-
-    my $text = __x"The soap version `{envns}' is not supported"
-                  , envns => $envns;
-
-    (RC_NOT_IMPLEMENTED, 'SOAP version not supported', $text);
+    ( RC_NOT_IMPLEMENTED, 'SOAP version not supported'
+    , __x("The soap version `{envns}' is not supported", envns => $envns));
 }
 
 =chapter DETAILS

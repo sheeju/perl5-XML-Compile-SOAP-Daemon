@@ -14,5 +14,6 @@ lib/XML/Compile/SOAP/Daemon.pm
 lib/XML/Compile/SOAP/HTTPDaemon.pm
 t/01use.t
 t/10fault.t
-t/99pod.t
+t/20wsa.t
 t/TestTools.pm
+xt/99pod.t
