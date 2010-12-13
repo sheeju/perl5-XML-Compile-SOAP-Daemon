@@ -119,15 +119,15 @@ sub process_request()
 sub url() { "url replacement not yet implemented" }
 sub product_tokens() { shift->{prop}{name} }
 
-=method runRequest REQUEST, CONNECTION
+=method runRequest REQUEST, [CONNECTION]
 Handle one REQUEST (M<HTTP::Request> object), which was received from
 the CLIENT (string).
 =cut
 
-sub runRequest($$)
+sub runRequest($;$)
 {   my ($self, $request, $connection) = @_;
 
-    my $client   = $connection->peerhost;
+#   my $client   = $connection->peerhost;
     if($request->method !~ m/^(?:M-)?POST/)
     {   return $self->makeResponse($request, RC_METHOD_NOT_ALLOWED
           , "only POST or M-POST"

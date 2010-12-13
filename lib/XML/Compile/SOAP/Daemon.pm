@@ -126,13 +126,15 @@ CLASS name.
 The keys are port names, the values are strings which are used by
 clients to indicate which server operation they want to use. Often,
 an WSDL contains this information in C<wsaw:Action> attributes; that
-info is added to this HASH automatically.
+info is added to this HASH automatically when M<XML::Compile::SOAP::WSA>
+is loaded.
 
 =option  wsa_action_output HASH|ARRAY
 =default wsa_action_output {}
 The keys are port names, the values are strings which the server will
-add to replies to the client. Often, an WSDL contains this information
-in C<wsaw:Action> attributes.
+add to replies to the client. Often, an WSDL contains this information in
+C<wsaw:Action> attributes; that info is added to this HASH automatically
+when M<XML::Compile::SOAP::WSA> is loaded.
 
 =option  soap_action_input HASH|ARRAY
 =default soap_action_input {}
@@ -142,16 +144,18 @@ from the WSDL.
 
 =option  accept_slow_select BOOLEAN
 =default accept_slow_select <true>
-Traditional SOAP does not have a simple way to find-out which operation
-is being called. The only way to figure-out which operation is needed,
-is by trying all defined operations... until one matches.
+Traditional SOAP does not have a simple way to find out which operation
+is being called. The only way to determine which operation is needed,
+is by trying all defined operations until one matches.
 
-Later, people started to use soapAction (which was officially only
-for proxies) and then the WSA header extension. Both of them make
-it easy to find the right handler one on one.
+Later, people started to use the soapAction HTTP header (which
+was officially only for proxies) and then the WSA SOAP header
+extension. Either of them make it easy to determine the right handler
+one on one.
 
-Disabling C<accept_slow_select> will protect you againts various
-forms of DoS-attacks, however is often not possible.
+Disabling C<accept_slow_select> will protect you against various
+forms of DoS-attacks, however this is often not possible as many
+WSDLs do not define soapAction or WSA action keys.
 =cut
 
 sub new(@)  # not called by HTTPDaemon
@@ -366,7 +370,7 @@ sub process($)
     # Try to resolve operation via soapAction
     my $sa = $self->{sa_input_rev};
     if(defined $soapaction && $soapaction =~ m/^\s*(["'])?(.+)\1\s*$/)
-    {   if(my $name = $sa->{$1})
+    {   if(my $name = $sa->{$2})
         {   my $handler = $handlers->{$name};
             local $info->{selected_by} = 'soap-action';
             my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
