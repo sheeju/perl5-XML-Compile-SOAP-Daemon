@@ -214,7 +214,7 @@ sub actionFromHeader($)
 
       !defined $action            ? undef
     : $action =~ m/^\s*\"(.*?)\"/ ? $1
-    :                               '';
+    :                               $action;
 }
 
 =chapter DETAILS
