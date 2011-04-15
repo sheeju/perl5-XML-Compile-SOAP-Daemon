@@ -4,122 +4,81 @@ use strict;
 package XML::Compile::SOAP::Daemon;
 our @ISA;   # filled-in at new().
 
-use Log::Report 'xml-compile-soap-daemon', syntax => 'SHORT';
+use Log::Report 'xml-compile-soap-daemon';
 dispatcher SYSLOG => 'default';
 
 use XML::LibXML        ();
 use XML::Compile::Util qw/type_of_node/;
+use XML::Compile::SOAP ();
 
-use List::Util         qw/first/;
-use Time::HiRes        qw/time/;
-
-# we use HTTP status definitions for each soap protocol
-use HTTP::Status       qw/RC_FORBIDDEN RC_NOT_IMPLEMENTED
-  RC_SEE_OTHER RC_NOT_ACCEPTABLE RC_UNPROCESSABLE_ENTITY
-  RC_NOT_IMPLEMENTED RC_NOT_FOUND/;
-
-# Net::Server error levels to Log::Report levels
-my @levelToReason = qw/ERROR WARNING NOTICE INFO TRACE/;
+# We use HTTP status definitions for each soap protocol, but HTTP::Status
+# may not be installed.
+use constant
+  { RC_SEE_OTHER            => 303
+  , RC_FORBIDDEN            => 403
+  , RC_NOT_FOUND            => 404
+  , RC_UNPROCESSABLE_ENTITY => 422
+  , RC_NOT_IMPLEMENTED      => 501
+  };
 
 my $parser        = XML::LibXML->new;
 
 =chapter NAME
-XML::Compile::SOAP::Daemon - SOAP accepting server
+XML::Compile::SOAP::Daemon - SOAP accepting server (base class)
 
 =chapter SYNOPSIS
  #### have a look in the examples directory!
- use XML::Compile::SOAP::HTTPDaemon;
- use XML::Compile::SOAP11;
- use XML::Compile::SOAP::WSA;  # optional
+ use XML::Compile::SOAP::Daemon::CGI;
+ my $daemon  = XML::Compile::SOAP::Daemon::CGI->new;
 
- # Be warned that the daemon will be Net::Server based, which consumes
- # command-line arguments!
- my $daemon  = XML::Compile::SOAP::HTTPDaemon->new;
-
- # daemon definitions from WSDL
+ # operation definitions from WSDL
  my $wsdl    = XML::Compile::WSDL11->new(...);
  $wsdl->importDefinitions(...); # more schemas
  $daemon->operationsFromWSDL($wsdl, callbacks => ...);
 
- # daemon definitions added manually
+ $daemon->setWsdlResponse($wsdl_fn);
+
+ # operation definitions added manually
  my $soap11  = XML::Compile::SOAP11::Server->new(schemas => $wsdl->schemas);
  my $handler = $soap11->compileHandler(...);
  $daemon->addHandler('getInfo', $soap11, $handler);
 
- # see what is defined:
- $daemon->printIndex;
-
- # finally, run the server.  This never returns.
- $daemon->run(...daemon options...);
-
 =chapter DESCRIPTION
 
 This base class implements the common needs between various types of
-SOAP daemons.  As daemon type, you can use any kind of M<Net::Server>
-implementation.
+SOAP daemons. Ache daemon can handle various kinds of SOAP protocols at
+the same time, when possible hidden from the user of this module.
 
-The following extensions are implemented on the moment: (other are not
-yet planned to get implemented)
+The following extensions are implemented on the moment:
 
 =over 4
 =item .
-M<XML::Compile::SOAP::HTTPDaemon>, for transport over HTTP.
+M<XML::Compile::SOAP::Daemon::NetServer>, for transport over HTTP
+based on M<Net::Server> and M<LWP>.
 
+=item .
+M<XML::Compile::SOAP::Daemon::CGI>, for transport over HTTP
+based on M<CGI> and M<LWP>.
 =back
 
-The daemon can handle various kinds of SOAP protocols at the same time,
-when possible hidden from the user of this module.
-
-If you have a WSDL describing your procedures, then the only thing you
-have to worry about is adding callbacks for each of the defined ports.
-Without WSDL, you will need to do more manually, but it is still
-relatively simple to achieve.
+If you have a WSDL describing your procedures (operations), then the
+only thing you have to worry about is adding callbacks for each of the
+defined ports.  Without WSDL, you will need to do more manually, but it
+is still relatively simple to achieve.
 
 Do not forget to take a look at the extensive example, enclosed in the
 M<XML::Compile::SOAP::Daemon> distribution package.  It is really worth
 the time.
-
-=cut
-
-sub default_values()
-{   my $self  = shift;
-    my $def   = $self->SUPER::default_values;
-    my %mydef =
-     ( # changed defaults
-       setsid => 1, background => 1, log_file => 'Log::Report'
-
-       # make in-code defaults explicit, Net::Server 0.97
-       # see http://rt.cpan.org//Ticket/Display.html?id=32226
-     , log_level => 2, syslog_ident => 'net_server', syslog_logsock => 'unix'
-     , syslog_facility => 'daemon', syslog_logopt => 'pid'
-     );
-   @$def{keys %mydef} = values %mydef;
-   $def;
-}
-
-#-------------------------------------
 
 =chapter METHODS
 
 =section Constructors
 
 =c_method new OPTIONS
-Create the server handler, which extends some class which implements
-a M<Net::Server>.
-
-Any daemon configuration parameter should be passed with M<run()>.  This
-is a little tricky.  Read below in the L</Configuration options> section.
 
 =option  output_charset STRING
 =default output_charset 'UTF-8'
 The character-set to be used for the output XML document.
-
-=option  based_on Net::Server OBJECT|CLASS
-=default based_on <internal Net::Server::PreFork>
-You may pass your own M<Net::Server> compatible daemon, if you feel a need
-to initialize it or prefer an other one.  Preferrably, pass configuration
-settings to M<run()>.  You may also specify any M<Net::Server> compatible
-CLASS name.
 
 =option  wsa_action_input HASH|ARRAY
 =default wsa_action_input {}
@@ -158,40 +117,21 @@ forms of DoS-attacks, however this is often not possible as many
 WSDLs do not define soapAction or WSA action keys.
 =cut
 
-sub new(@)  # not called by HTTPDaemon
-{   my ($class, %args) = @_;
-
-    # Use a Net::Server as base object
-
-    my $daemon = delete $args{based_on} || 'Net::Server::PreFork';
-    unless(ref $daemon)
-    {   eval "require $daemon";
-        $@ and error __x"failed to compile Net::Server class {class}, {error}"
-           , class => $daemon, error => $@;
-
-        my %options;
-        $daemon = $daemon->new;
-    }
-
-    $daemon->isa('Net::Server')
-        or error __x"The daemon is not a Net::Server, but {class}"
-             , class => ref $daemon;
-
-    # Upgrade daemon, wow Perl!
-    @ISA = ref $daemon;
-    my $self = (bless $daemon, $class)->init(\%args);
-
-    $self->{accept_slow_select}
-      = exists $args{accept_slow_select} ? $args{accept_slow_select} : 1; 
-
-    $self->addWsaTable(INPUT  => $args{wsa_action_input});
-    $self->addWsaTable(OUTPUT => $args{wsa_action_output});
-    $self->addSoapAction($args{soap_action_input});
-    $self;
+sub new(@)
+{   my $class = shift;
+    $class ne __PACKAGE__
+        or error __x"you can only use extensions of {pkg}", pkg => __PACKAGE__;
+    (bless {}, $class)->init( {@_} );
 }
 
 sub init($)
 {   my ($self, $args) = @_;
+    $self->{accept_slow_select}
+      = exists $args->{accept_slow_select} ? $args->{accept_slow_select} : 1; 
+
+    $self->addWsaTable(INPUT  => $args->{wsa_action_input});
+    $self->addWsaTable(OUTPUT => $args->{wsa_action_output});
+    $self->addSoapAction($args->{soap_action_input});
 
     if(my $support = delete $args->{support_soap})
     {   # simply only load the protocol versions you want to accept.
@@ -206,47 +146,6 @@ sub init($)
     $self->{handler}        = {};
     $self;
 }
-
-sub post_configure()
-{   my $self = shift;
-    my $prop = $self->{server};
-
-    # Change the way messages are logged
-
-    my $loglevel = $prop->{log_level};
-    my $reasons  = ($levelToReason[$loglevel] || 'NOTICE') . '-';
-
-    my $logger   = delete $prop->{log_file};
-    if($logger eq 'Log::Report')
-    {   # dispatching already initialized
-    }
-    elsif($logger eq 'Sys::Syslog')
-    {   dispatcher SYSLOG => 'default'
-          , accept    => $reasons
-          , identity  => $prop->{syslog_ident}
-          , logsocket => $prop->{syslog_logsock}
-          , facility  => $prop->{syslog_facility}
-          , flags     => $prop->{syslog_logopt}
-    }
-    else
-    {   dispatcher FILE => 'default', to => $logger;
-    }
-
-    $self->SUPER::post_configure;
-}
-
-# Overrule Net::Server's log() to translate it into Log::Report calls
-sub log($$@)
-{   my ($self, $level, $msg) = (shift, shift, shift);
-    $msg = sprintf $msg, @_ if @_;
-    $msg =~ s/\n$//g;  # some log lines have a trailing newline
-
-    my $reason = $levelToReason[$level] or return;
-    report $reason => $msg;
-}
-
-# use Log::Report for hooks
-sub write_to_log_hook { panic "write_to_log_hook cannot be used" }
 
 =section Attributes
 
@@ -295,20 +194,16 @@ sub addSoapAction(@)
 =section Running the server
 
 =method run OPTIONS
-See M<Net::Server::run()>, but the OPTIONS are passed as list, not
-as HASH.
+How the daemon is run depends much on the extension being used.
 =cut
 
 sub run(@)
 {   my ($self, %args) = @_;
-    delete $args{log_file};      # Net::Server should not mess with my preps
-    $args{no_client_stdout} = 1; # it's a daemon, you know
-
     notice __x"WSA module loaded, but not used"
         if XML::Compile::SOAP::WSA->can('new') && !keys %{$self->{wsa_input}};
 
     $self->{wsa_input_rev}  = +{ reverse %{$self->{wsa_input}} };
-    $self->SUPER::run(%args);
+    $self->_run(\%args);
 }
 
 =method process CLIENT, XMLIN, REQUEST, ACTION
@@ -505,6 +400,16 @@ sub addHandler($$$)
     $self->{handler}{$version}{$name} = $code;
 }
 
+=method setWsdlResponse FILENAME
+Many existing SOAP servers will reponse to GET queries which end on "?WSDL"
+by sending the WSDL in use by the service.
+=cut
+
+sub setWsdlResponse($)
+{   my ($self, $filename) = @_;
+    panic "not implemented by backend {pkg}", pkg => (ref $self || $self);
+}
+
 =section Helpers
 
 =method handlers ('SOAP11'|'SOAP12'|SOAP)
@@ -579,48 +484,7 @@ sub faultUnsupportedSoapVersion($)
 
 =chapter DETAILS
 
-=section Configuration options
-
-This module will wrap any kind of M<Net::Server>, for instance a
-M<Net::Server::PreFork>.  It depends on the type of C<Net::Server>
-you specify (see M<new(based_on)>) which conifguration options are
-available on the command-line, in a configuration file, or with M<run()>.
-Each daemon extension implementation will add some configuration options
-as well.
-
-Any C<XML::Compile::SOAP::Daemon> object will have the following additional
-configuration options:
-
-  Key          Value                            Default
-  # there will be some, I am sure of it.
-
-Some general configuration options of Net::Server have a different default.
-See also the next section about logging.
-
-  Key          Value                            New default
-  setsid       boolean                          true
-  background   boolean                          true
-
-=subsection logging
-
-An attempt is made to merge XML::Compile's M<Log::Report> and M<Net::Server>
-log configuration.  By hijacking the C<log()> method, all Net::Server
-internal errors are dispatched over the Log::Report framework.  Log levels
-are translated into report reasons: 0=ERROR, 1=WARNING, 2=NOTICE, 3=INFO,
-4=TRACE.
-
-When you specify C<Sys::Syslog> or a filename, default dispatchers of type
-SYSLOG resp FILE are created for you.  When the C<log_file> type is set to
-C<Log::Report>, you have much more control over the process, but all log
-related configuration options will get ignored.  In that case, you must
-have initialized the dispatcher framework the way Log::Report is doing
-it: before the daemon is initiated. See M<Log::Report::dispatcher()>.
-
-  Key          Value                            Default
-  log_file     filename|Sys::Syslog|Log::Report Log::Report
-  log_level    0..4 | REASON                    2 (NOTICE)
-
-=subsection Operation handlers
+=section Operation handlers
 
 Per operation, you define a callback which handles the request. There can
 also be a default callback for all your operations. Besides, when an
@@ -637,6 +501,16 @@ XML structure.  This could be a Fault, like shown in the next section.
 
 Please take a look at the scripts in the example directory within
 the distribution.
+
+=section Returning errors
+
+In WSDLs you may find explicitly defined error details types. There is
+only one such error structure per operation: when an operation may return
+different kinds of errors, they will be wrapped into one structure which
+contains the details. See section L</"Returning private errors"> below.
+
+Errors which do not return an C<details> record can always be reported
+with code and string. Let's first explain those.
 
 =subsection Returning general errors
 

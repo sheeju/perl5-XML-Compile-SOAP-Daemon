@@ -2,6 +2,9 @@ ChangeLog
 MANIFEST
 Makefile.PL
 TODO
+examples/mod_perl/README
+examples/mod_perl/create_MyServer
+examples/mod_perl/nph-server.cgi
 examples/namesservice/MyExampleCalls.pm
 examples/namesservice/MyExampleData.pm
 examples/namesservice/README
@@ -11,9 +14,11 @@ examples/namesservice/namesservice.xsd
 examples/namesservice/server.pl
 examples/namesservice/servtempl.pl
 lib/XML/Compile/SOAP/Daemon.pm
+lib/XML/Compile/SOAP/Daemon/CGI.pm
+lib/XML/Compile/SOAP/Daemon/LWPutil.pm
+lib/XML/Compile/SOAP/Daemon/NetServer.pm
 lib/XML/Compile/SOAP/HTTPDaemon.pm
 t/01use.t
 t/10fault.t
 t/20wsa.t
-t/TestTools.pm
 xt/99pod.t
