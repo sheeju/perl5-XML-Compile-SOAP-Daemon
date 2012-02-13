@@ -8,6 +8,9 @@ use base 'Exporter';
 XML::Compile::SOAP::Daemon::LWPutil - LWP helper routines
 
 =chapter SYNOPSIS
+  # used by ::Daemon::NetServer
+  #     and ::Daemon::AnyDaemon
+
 =chapter DESCRIPTION
 =cut
 
@@ -21,14 +24,14 @@ our @EXPORT = qw(
 );
 
 use Log::Report 'xml-compile-soap-daemon';
-use LWP;
-use HTTP::Status;
 use XML::Compile::SOAP::Util ':daemon';
+use LWP;
+use HTTP::Status qw/RC_OK RC_METHOD_NOT_ALLOWED RC_NOT_ACCEPTABLE/;
 
-sub lwp_add_header($$);
+sub lwp_add_header($$@);
 sub lwp_handle_connection($@);
-sub lwp_run_request($$;$);
-sub lwp_make_response($$$$);
+sub lwp_run_request($$;$$);
+sub lwp_make_response($$$$;$);
 sub lwp_action_from_header($);
 
 =chapter FUNCTIONS
@@ -48,9 +51,7 @@ BEGIN
     }
 }
 
-sub lwp_add_header($$)
-{   push @default_headers, @_;
-}
+sub lwp_add_header($$@) { push @default_headers, @_ }
 
 =function lwp_wsdl_response [WSDLFILE|RESPONSE]
 Set the result of WSDL query responses, either to a response which
@@ -90,6 +91,7 @@ sub lwp_handle_connection($@)
     my $expires  = $args{expires};
     my $maxmsgs  = $args{maxmsgs};
     my $reqbonus = $args{reqbonus};
+    my $postproc = $args{postprocess};
 
     local $SIG{ALRM} = sub { die "timeout\n" };
 
@@ -100,7 +102,9 @@ sub lwp_handle_connection($@)
         alarm 0;
         $request or last;
 
-        my $response = lwp_run_request $request, $args{handler}, $connection;
+        my $response = lwp_run_request $request, $args{handler}
+          , $connection, $postproc;
+
         $connection->force_last_request if $maxmsgs==1;
         $connection->send_response($response);
 
@@ -109,14 +113,15 @@ sub lwp_handle_connection($@)
     }
 }
 
-=function lwp_run_request REQUEST, HANDLER, [CONNECTION]
+=function lwp_run_request REQUEST, HANDLER, [CONNECTION, POSTPROC]
 Handle one REQUEST (M<HTTP::Request> object), which was received from
 the CLIENT (string).  When the request has been received, the HANDLER
-is called. With that result, a response message is composed.
+is called. Returns the status, the status as text message, and the
+output as M<XML::LibXML::Document>.
 =cut
 
-sub lwp_run_request($$;$)
-{   my ($request, $handler, $connection) = @_;
+sub lwp_run_request($$;$$)
+{   my ($request, $handler, $connection, $postproc) = @_;
 
 #   my $client   = $connection->peerhost;
     return $wsdl_response
@@ -143,16 +148,17 @@ sub lwp_run_request($$;$)
     my $charset  = $ct =~ m/\;\s*type\=(["']?)([\w-]*)\1/ ? $2: 'utf-8';
     my $xmlin    = $request->decoded_content(charset => $charset, ref => 1);
 
-    my ($status, $msg, $out) = $handler->($xmlin, $request, $action);
+    my ($status, $status_msg, $xml)
+      = $handler->($xmlin, $request, $action);
 
-    lwp_make_response $request, $status, $msg, $out;
+    lwp_make_response $request, $status, $status_msg, $xml, $postproc;
 }
 
-=function lwp_make_response REQUEST, RC, MSG, BODY
+=function lwp_make_response REQUEST, RC, MSG, BODY, [POSTPROC]
 =cut
 
-sub lwp_make_response($$$$)
-{   my ($request, $status, $msg, $body) = @_;
+sub lwp_make_response($$$$;$)
+{   my ($request, $status, $msg, $body, $postproc) = @_;
 
     my $response = HTTP::Response->new($status, $msg);
     $response->header(@default_headers);
@@ -167,6 +173,9 @@ sub lwp_make_response($$$$)
     {   $s = "[$status] $body";
         $response->header(Content_Type => 'text/plain');
     }
+
+    $postproc->($request, $response, $status, \$s)
+        if $postproc;
 
     $response->content_ref(\$s);
     { use bytes; $response->header('Content-Length' => length $s); }
@@ -206,9 +215,37 @@ sub lwp_action_from_header($)
     {   return undef;
     }
 
-      !defined $action            ? undef
-    : $action =~ m/^\s*\"(.*?)\"/ ? $1
-    :                               $action;
+    defined $action or return;
+
+    $action =~ s/["'\s]//g;  # often wrong blanks and quotes
+    $action;
 }
+
+#------------------------------
+=chapter DETAILS
+
+=section Postprocessing responses
+
+The C<LWP> based daemons provide a C<postprocess> option to their C<run()>
+methods.  The parameter is a CODE reference.
+
+When defined, the CODE is called when the response message is ready
+to be returned to the client:
+
+  $code->($request, $response, $status, \$body)
+
+The source C<$requests> is passed as first parameter.  The C<$response>
+is an M<HTTP::Response> object, with all headers but without the body.
+The C<$status> is the result code of the handler.  A value of 200
+(C<HTTP_OK> from C<HTTP::Status>) indicates successful processing of the
+request.  When the status is not HTTP_OK you may skip the postprocessing.
+
+The C<$body> are the bytes which will be added as body to the response
+after this postprocessing has been done.  You may change the body.
+B<Be warned> that the body is not a (latin1 or utf-8) string but already
+encoded into a byte string.
+
+
+=cut
 
 1;

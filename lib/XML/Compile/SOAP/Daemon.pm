@@ -5,7 +5,6 @@ package XML::Compile::SOAP::Daemon;
 our @ISA;   # filled-in at new().
 
 use Log::Report 'xml-compile-soap-daemon';
-dispatcher SYSLOG => 'default';
 
 use XML::LibXML        ();
 use XML::Compile::Util qw/type_of_node/;
@@ -53,8 +52,16 @@ The following extensions are implemented on the moment:
 
 =over 4
 =item .
+M<XML::Compile::SOAP::Daemon::AnyDaemon>, for transport over HTTP
+based on M<Any::Daemon> (a generic pre-forked daemon) and M<LWP>.
+It uses M<Log::Report> as exception and loggin frame-work, just as all
+C<XML::Compile> modules do, hence cleaner integration.
+
+=item .
 M<XML::Compile::SOAP::Daemon::NetServer>, for transport over HTTP
-based on M<Net::Server> and M<LWP>.
+based on M<Net::Server> and M<LWP>.  The C<Net::Server> distribution
+offers a number of very different daemon implementations.  There are
+too many ways to configure it.
 
 =item .
 M<XML::Compile::SOAP::Daemon::CGI>, for transport over HTTP
@@ -194,20 +201,25 @@ sub addSoapAction(@)
 =section Running the server
 
 =method run OPTIONS
-How the daemon is run depends much on the extension being used.
+How the daemon is run depends much on the extension being used. See the
+C<::NetServer> and C<::CGI> manual-page.
 =cut
 
 sub run(@)
 {   my ($self, %args) = @_;
+ eval {
     notice __x"WSA module loaded, but not used"
         if XML::Compile::SOAP::WSA->can('new') && !keys %{$self->{wsa_input}};
 
     $self->{wsa_input_rev}  = +{ reverse %{$self->{wsa_input}} };
     $self->_run(\%args);
+ };
+ error $@ if $@;
 }
 
 =method process CLIENT, XMLIN, REQUEST, ACTION
-The XMLIN SOAP-structured message (an M<XML::LibXML::Element>,
+This method is called to process a single request.
+The XMLIN is a SOAP-structured message (an M<XML::LibXML::Element>,
 M<XML::LibXML::Document>, or XML as string), was received from the CLIENT
 (some extension specific object).
 
@@ -215,8 +227,17 @@ The full REQUEST is passed in, however its format depends on the
 kind of server. The ACTION parameter relates to the soapAction header
 field which may be available in some form.
 
-Returned is an XML document as answer or a protocol specific ready
-response object (usually an error object).
+Returned is an XML document (M<XML::LibXML::Document>) as answer or a
+protocol specific ready response object (usually an error object).
+
+This C<process> method will determine which callback routine to use to
+generate a reply and then call the routine. See L</Operation handlers>
+for details on how the routines are called.
+
+See M<operationsFromWSDL()> and M<addHandler()> on how the callback
+routines can be specified.  See M<new()> for a description of the options
+which control how the callback routine is chosen.
+
 =cut
 
 # defined by Net::Server
@@ -226,10 +247,12 @@ sub process($)
 {   my ($self, $input, $req, $soapaction) = @_;
 
     my $xmlin;
-    if(ref $input eq 'SCALAR')
+    if(! defined $input)
+    {  return $self->faultNotSoapMessage('No input');
+    }
+    elsif(ref $input eq 'SCALAR')
     {   $xmlin = try { $parser->parse_string($$input) };
-        !$@ && $input
-            or return $self->faultInvalidXML($@->died)
+        return $self->faultInvalidXML($@->died) if $@;
     }
     else
     {   $xmlin = $input;
@@ -258,7 +281,7 @@ sub process($)
     {   if(my $name = $wsa_in->{$wsa_action})
         {   my $handler = $handlers->{$name};
             local $info->{selected_by} = 'wsa-action';
-            my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
+            my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info, $req);
             if($xmlout)
             {   trace "data ready for $version $name, via wsa $wsa_action";
                 return ($rc, $msg, $xmlout);
@@ -272,9 +295,9 @@ sub process($)
     {   if(my $name = $sa->{$soapaction})
         {   my $handler = $handlers->{$name};
             local $info->{selected_by} = 'soap-action';
-            my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
+            my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info, $req);
             if($xmlout)
-            {   trace "data ready for $version $name, via sa $soapaction";
+            {   trace "data ready for $version $name, via sa '$soapaction'";
                 return ($rc, $msg, $xmlout);
             }
         }
@@ -286,7 +309,7 @@ sub process($)
     {   keys %$handlers;  # reset each()
         $info->{selected_by} = 'attempt all';
         while(my ($name, $handler) = each %$handlers)
-        {   my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info);
+        {   my ($rc, $msg, $xmlout) = $handler->($name, $xmlin, $info, $req);
             defined $xmlout or next;
 
             trace "data ready for $version $name";
@@ -314,6 +337,10 @@ Compile the operations found in the WSDL object (an
 M<XML::Compile::WSDL11>).  You can add the operations from many different
 WSDLs into one server, simply by calling this method repeatedly.
 
+You can also specify OPTIONS for M<XML::Compile::WSDL11::operations()>.
+Those parameters may be needed to distinguish between the test-server
+and the live-server, provided protocol support and such.
+
 =option  callbacks HASH
 =default callbacks {}
 The keys are the port names, as defined in the WSDL.  The values are CODE
@@ -325,6 +352,19 @@ addressing the port (this is a guess). See L</Operation handlers>
 When a message arrives which has no explicit handler attached to it,
 this handler will be called.  By default, an "not implemented" fault will
 be returned.  See L</Operation handlers>
+
+=option  operations ARRAY
+=default operations undef
+Load the selected operations only (M<XML::Compile::SOAP::Operation> objects)
+If not specified, all operations will be taken which are selected with
+the C<service>, C<port>, and C<binding> OPTIONS for
+M<XML::Compile::WSDL11::operations()>.
+
+=example
+ $wsdl->operationsFromWSDL($wsdl, service => 'MyService',
+    binding => 'MyService-soap11', callbacks => {get => \$f11});
+ $wsdl->operationsFromWSDL($wsdl, service => 'MyService-test',
+    binding => 'MyService-soap12', callbacks => {get => \$f12});
 =cut
 
 sub operationsFromWSDL($@)
@@ -336,18 +376,17 @@ sub operationsFromWSDL($@)
     my $wsa_input  = $self->{wsa_input};
     my $wsa_output = $self->{wsa_output};
 
-    my @ops  = $wsdl->operations;
-    unless(@ops)
-    {   info __x"no operations in WSDL";
-        return;
-    }
+    my $ops = $args{operations};
+    my @ops = $ops ? @$ops : $wsdl->operations(%args);
+    @ops or return;   # none selected
 
     foreach my $op (@ops)
     {   my $name = $op->name;
-        $names{$name}++;
-        my $code;
+        warning "multiple operations with name {name}", name => $name
+            if $names{$name}++;
 
-        if(my $callback = delete $callbacks{$name})
+        my $code;
+        if(my $callback = $callbacks{$name})
         {   UNIVERSAL::isa($callback, 'CODE')
                or error __x"callback {name} must provide a CODE ref"
                     , name => $name;
@@ -377,8 +416,11 @@ sub operationsFromWSDL($@)
 
     info __x"added {nr} operations from WSDL", nr => (scalar @ops);
 
-    warning __x"no operation for callback handler `{name}'", name => $_
-        for sort keys %callbacks;
+    if(keys %names != keys %callbacks)
+    {   $names{$_}
+            or warning __x"no operation for callback handler `{name}'",name=>$_
+                for sort keys %callbacks;
+    }
 
     $self;
 }
@@ -490,16 +532,22 @@ Per operation, you define a callback which handles the request. There can
 also be a default callback for all your operations. Besides, when an
 operation does not have a handler defined, one is created for you.
 
- sub my_callback($$)
- {   my ($soap, $data_in) = @_;
+ sub my_callback($$$)
+ {   my ($soap, $data_in, $request) = @_;
 
      return $data_out;
  }
 
+The C<$soap> parameter is the actual C<XML::Compile::SOAP> object which
+handles this protocol version (at the moment only M<XML::Compile::SOAP11>.
+C<$data_in> is a HASH with the decoded information from the request.
+The type and content of C<$request> depends on the type of server,
+often an M<HTTP::Request>.
+
 The C<$data_out> is a nested HASH which will be translated in the right
 XML structure.  This could be a Fault, like shown in the next section.
 
-Please take a look at the scripts in the example directory within
+Please take a look at the scripts in the F<examples/> directory within
 the distribution.
 
 =section Returning errors
@@ -554,22 +602,67 @@ together for user errors.
 
 =subsection Returning private errors
 
-In a WSDL, we can specify own fault types. These defined elements descripe
+In a WSDL, we can specify own fault types. These defined elements describe
 the C<detail> component of the message.
 
-To return such an error, you have to figure-out how the fault part is
-named. Often, the name simply is C<fault>.  Then, your handle has to
-return a Fault structure where the detail refers to a HASH with data
-matching the need for the fault.  Example:
+For example, in the WSDL and Schema we may have:
+
+ <xs:element name="errorReportMsg" type="ErrorReportType"/>
+ <xs:complexType name="ErrorReportType">
+   <xs:sequence>
+     <xs:element name="info" type="string">
+     <xs:element name="cause" type="string" minOccurs="0">
+   </xs:sequence>
+ </xs:complexType>
+
+ <message name="ErrorReport">
+     <part name="message" element="tmdd:errorReportMsg"/>
+ </message>
+
+ <operation name="GetData">
+   <input message="GetDataRequest"/>
+   <output message="GetDataRequest"/>
+   <fault name="errorReport" message="ErrorReport"/>
+ </operation>
+
+To return a private error you need to determine the name of the fault
+part.  In the example above the fault parts name is C<errorReport>.
+However,  in some WSDLs the C<name> option is not present and
+M<XML::Compile::SOAP> assumes that C<fault> will be used to indicate
+the fault part.
+
+You need to return a HASH with values for the ErrorReport element
+together with values for the fields in the Fault value shown
+in the previous section.  For example:
+
+  my $msg = "Unknown Error";
+  return
+   +{ errorReport =>   # the name of the fault part
+        { # this gets put into the 'detail' part of
+          # the fault message
+          info => $msg
+
+          # these are used for the other parts of the fault message
+        , faultcode   => pack_type(SOAP11ENV, 'Server.BadOperation')
+        , faultstring => $msg
+        , faultactor  => $soap->role
+        }
+    };
+
+If no name is specified for the fault part, then you can use:
 
   return
-  +{ fault =>   # the name of the fault part, often "fault"
-       { faultcode   => pack_type(SOAP11ENV, 'Server')
-       , faultstring => 'any-ns.WentWrong'
-       , faultactor  => $soap->role
-       , detail      => { message => 'Hello, World!' }
-       }
-   };
+   +{ fault =>   # the name of the fault part
+        { faultcode   => pack_type(SOAP11ENV, 'Server.BadOperation')
+        , faultstring => $msg
+        , faultactor  => $soap->role
+        , detail => { info=> $msg }
+        }
+    };
+
+It has been observed that several SOAP toolkits do not handle user defined
+faults messages very well.  However, they do provide the faultcode and
+faultstring values from the fault message.
 
 =cut
 

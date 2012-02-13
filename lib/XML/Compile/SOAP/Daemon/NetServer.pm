@@ -2,9 +2,12 @@ use warnings;
 use strict;
 
 package XML::Compile::SOAP::Daemon::NetServer;
-use base 'XML::Compile::SOAP::Daemon';
 
+# The selected type of netserver gets added to the @ISA during new(),
+# so there are two base-classes!
+use base 'XML::Compile::SOAP::Daemon';
 our @ISA;
+
 use Log::Report 'xml-compile-soap-daemon';
 
 use HTTP::Daemon              ();
@@ -182,7 +185,14 @@ sub write_to_log_hook { panic "write_to_log_hook cannot be used" }
 
 =method run OPTIONS
 See M<Net::Server::run()>, but the OPTIONS are passed as list, not
-as HASH.
+as HASH. You may pass any option to which accepted by the M<Net::Server>
+extension you are using.
+
+=option  postprocess CODE
+=default postprocess C<undef>
+See the section about this option in the DETAILS chapter of the
+M<XML::Compile::SOAP::Daemon::LWPutil> manual-page.
+
 =cut
 
 sub _run($)
@@ -190,6 +200,7 @@ sub _run($)
     delete $args->{log_file};      # Net::Server should not mess with my preps
     $args->{no_client_stdout} = 1; # it's a daemon, you know
     lwp_add_header Server => $self->{prop}{name};
+    $self->{XCSDN_pp} = delete $args->{postprocess};
 
     $ISA[1]->can('run')->($self, $args);    # never returns
 }
@@ -211,6 +222,7 @@ eval {
           , maxmsgs  => $prop->{client_maxreq}
           , reqbonus => $prop->{client_reqbonus}
           , handler  => sub {$self->process(@_)}
+          , postprocess => $self->{XCSDN_pp};
     };
 
     info __x"connection ended with force; {error}", error => $@
