@@ -12,7 +12,6 @@ use Log::Report 'xml-compile-soap-daemon';
 use Time::HiRes       qw/time alarm/;
 use Socket            qw/SOMAXCONN/;
 use IO::Socket::INET  ();
-use HTTP::Daemon      ();   # Contains HTTP::Daemon::ClientConn
 
 use XML::Compile::SOAP::Util  qw/:daemon/;
 use XML::Compile::SOAP::Daemon::LWPutil;
@@ -133,9 +132,15 @@ Ignored when a socket is provided, otherwise required.
 =default port C<undef>
 Ignored when a socket is provided, otherwise required.
 
-=option   listen INTEGER
-=default  listen SOMAXCONN
+=option  listen INTEGER
+=default listen SOMAXCONN
 Ignored when a socket is provided.
+
+=option  child_init CODE
+=default child_init C<undef>
+This CODE reference will get called by each child which gets started,
+before the "accept" waiting starts.  Ideal moment to start your
+database-connection.
 =cut
 
 sub _run($)
@@ -161,6 +166,7 @@ sub _run($)
         info __x"created socket at {interface}", interface => "$host:$port";
     }
     $self->{XCSDA_socket}    = $socket;
+    lwp_socket_init $socket;
 
     $self->{XCSDA_conn_opts} =
       { client_timeout  => ($args->{client_timeout}  ||  30)
@@ -169,8 +175,11 @@ sub _run($)
       , postprocess     => $args->{postprocess}
       };
 
+    my $child_init = $args->{child_init} || sub {};
+    my $child_task = sub {$child_init->($self); $self->accept_connections};
+
     $self->Any::Daemon::run
-      ( child_task => sub {$self->accept_connections}
+      ( child_task => $child_task
       , max_childs => ($args->{max_childs} || 10)
       , background => (exists $args->{background} ? $args->{background} : 1)
       );
@@ -182,15 +191,7 @@ sub accept_connections()
 
     while(my $client = $socket->accept)
     {   info __x"new client {remote}", remote => $client->peerhost;
-
-        # not sure whether this trick also works with IO::Socket::SSL's
-        my $old_client_class = ref $client;
-        my $connection = bless $client, 'HTTP::Daemon::ClientConn';
-        ${*$connection}{httpd_daemon} = $self;
-
-        $self->handle_connection($connection);
-
-        bless $client, $old_client_class;
+        $self->handle_connection(lwp_http11_connection $self, $client);
         $client->close;
     }
 }
@@ -216,6 +217,57 @@ sub product_tokens() { shift->{prop}{name} }
 
 =chapter DETAILS
 
+=section AnyDaemon with SSL
+
+First, create certificates and let them be signed by a CA (or yourself)
+See F<http://devsec.org/info/ssl-cert.html> to understand this.
+
+  # generate secret private key
+  openssl genrsa -out privkey.pem 1024
+
+  # create a "certification request" (CSR)
+  openssl req -new -key privkey.pem -out certreq.csr
+
+  # send the CSR to the Certification Authority or self-sign:
+  openssl x509 -req -days 3650 -in certreq.csr -signkey privkey.pem -out newcert.pem
+
+  # publish server certificate
+  ( openssl x509 -in newcert.pem; cat privkey.pem ) > server.pem
+  ln -s server.pem `openssl x509 -hash -noout -in server.pem`.0   # dot-zero
+
+Assuming that the certificates are in 'certs/', the program looks like this:
+
+  use Log::Report;
+  use XML::Compile::SOAP::Daemon::AnyDaemon;
+  use XML::Compile::WSDL11;
+  use IO::Socket::SSL       'SSL_VERIFY_NONE';
+  use IO::Socket            'SOMAXCONN';
+
+  my $daemon = XML::Compile::SOAP::Daemon::AnyDaemon->new;
+  my $wsdl   = XML::Compile::WSDL11->new($wsdl);
+
+  my %handlers = ();
+  $daemon->operationsFromWSDL($wsdl, callbacks => \%handlers);
+
+  my $socket = IO::Socket::SSL->new
+   ( LocalHost  => 'localhost'
+   , LocalPort  => 4444
+   , Listen     => SOMAXCONN
+   , Reuse      => 1
+   , SSL_server => 1
+   , SSL_verify_mode => SSL_VERIFY_NONE
+   , SSL_key_file    => 'certs/privkey.pem'
+   , SSL_cert_file   => 'certs/server.pem'
+   ) or error __x"cannot create socket at {interface}: {err}"
+         , interface => "$host:$port"
+         , err => IO::Socket::SSL::errstr();
+
+  $daemon->run
+   ( name       => basename($0)
+   , max_childs => 1
+   , socket     => $socket
+   , child_init => \&for_instance_connect_to_db
+   )
 =cut
 
 1;

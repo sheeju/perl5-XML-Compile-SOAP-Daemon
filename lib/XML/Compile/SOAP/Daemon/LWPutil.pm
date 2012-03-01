@@ -21,6 +21,8 @@ our @EXPORT = qw(
     lwp_make_response
     lwp_run_request
     lwp_wsdl_response
+    lwp_socket_init
+    lwp_http11_connection
 );
 
 use Log::Report 'xml-compile-soap-daemon';
@@ -220,6 +222,34 @@ sub lwp_action_from_header($)
     $action =~ s/["'\s]//g;  # often wrong blanks and quotes
     $action;
 }
+
+=function lwp_socket_init SOCKET
+Initialize LWP usage based on a created SOCKET.
+=cut
+
+sub lwp_socket_init($)
+{   my $socket = shift;
+    my $http11_impl = $socket->isa('IO::Socket::SSL')
+      ? 'HTTP::Daemon::SSL' : 'HTTP::Daemon';
+
+    eval "require $http11_impl";
+    error $@ if $@;
+}
+
+=function lwp_http11_connection DAEMON, SOCKET
+Initialize a HTTP/1.1 connect on the client SOCKET.
+=cut
+
+sub lwp_http11_connection($$)
+{   my ($daemon, $client) = @_;
+    my $http11_impl = $client->isa('IO::Socket::SSL')
+      ? 'HTTP::Daemon::ClientConn::SSL' : 'HTTP::Daemon::ClientConn';
+
+    my $connection  = bless $client, $http11_impl;
+    ${*$connection}{httpd_daemon} = $daemon;
+    $connection;
+}
+
 
 #------------------------------
 =chapter DETAILS
