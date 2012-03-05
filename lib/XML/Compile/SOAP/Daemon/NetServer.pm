@@ -164,7 +164,7 @@ sub post_configure()
 sub post_bind_hook()
 {   my $self = shift;
     my $prop = $self->{server};
-    lwp_socket_init $prop->{sock};
+    lwp_socket_init $_ for @{$prop->{sock}};
 }
 
 sub setWsdlResponse($)
