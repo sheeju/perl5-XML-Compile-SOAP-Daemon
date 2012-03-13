@@ -51,21 +51,33 @@ the same time, when possible hidden from the user of this module.
 The following extensions are implemented on the moment:
 
 =over 4
-=item .
+
+=item *
+
 M<XML::Compile::SOAP::Daemon::AnyDaemon>, for transport over HTTP
 based on M<Any::Daemon> (a generic pre-forked daemon) and M<LWP>.
 It uses M<Log::Report> as exception and loggin frame-work, just as all
 C<XML::Compile> modules do, hence cleaner integration.
 
-=item .
+=item *
+
+M<XML::Compile::SOAP::Daemon::CGI>, for transport over HTTP
+based on M<CGI> and M<LWP>.
+
+=item *
+
+M<XML::Compile::SOAP::Daemon::PSGI> allows to run SOAP server as a
+part of larger PSGI application (mixing webservice with standard
+webserver) or to integrate with existing event loop framework (AnyEvent,
+Coro, POE).
+
+=item *
+
 M<XML::Compile::SOAP::Daemon::NetServer>, for transport over HTTP
 based on M<Net::Server> and M<LWP>.  The C<Net::Server> distribution
 offers a number of very different daemon implementations.  There are
 too many ways to configure it.
 
-=item .
-M<XML::Compile::SOAP::Daemon::CGI>, for transport over HTTP
-based on M<CGI> and M<LWP>.
 =back
 
 If you have a WSDL describing your procedures (operations), then the
