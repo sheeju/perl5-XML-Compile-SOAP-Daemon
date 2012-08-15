@@ -229,8 +229,6 @@ Initialize LWP usage based on a created SOCKET.
 
 sub lwp_socket_init($)
 {   my $socket = shift;
-use Scalar::Util 'blessed';
-blessed $socket or panic $socket;
     my $http11_impl = $socket->isa('IO::Socket::SSL')
       ? 'HTTP::Daemon::SSL' : 'HTTP::Daemon';
 
@@ -247,6 +245,7 @@ sub lwp_http11_connection($$)
     my $http11_impl = $client->isa('IO::Socket::SSL')
       ? 'HTTP::Daemon::ClientConn::SSL' : 'HTTP::Daemon::ClientConn';
 
+    # Ugly hack: hijack the HTTP11 implementation of HTTP::Daemon
     my $connection  = bless $client, $http11_impl;
     ${*$connection}{httpd_daemon} = $daemon;
     $connection;

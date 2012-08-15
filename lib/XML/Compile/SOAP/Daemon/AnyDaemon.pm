@@ -3,8 +3,7 @@ use strict;
 
 package XML::Compile::SOAP::Daemon::AnyDaemon;
 
-# The selected type of netserver gets added to the @ISA during new(),
-# so there are two base-classes!  Any::Daemon at least version 0.13
+# Any::Daemon at least version 0.13
 use base 'XML::Compile::SOAP::Daemon', 'Any::Daemon';
 
 use Log::Report 'xml-compile-soap-daemon';

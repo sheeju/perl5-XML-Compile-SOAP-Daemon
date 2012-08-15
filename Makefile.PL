@@ -2,12 +2,12 @@ use ExtUtils::MakeMaker;
 
 use 5.008;
 
-my $version = '3.04';
+my $version = '3.05';
 
 my %prereq =
-  ( XML::Compile         => 1.24
-  , XML::Compile::SOAP   => 2.26
-  , XML::Compile::Tester => 0.05
+  ( XML::Compile         => 1.26
+  , XML::Compile::SOAP   => 2.29
+  , XML::Compile::Tester => 0.90
   , XML::Compile::Cache  => 0.991
 
   , Log::Report     => 0.90

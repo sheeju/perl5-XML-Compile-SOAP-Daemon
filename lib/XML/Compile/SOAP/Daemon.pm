@@ -337,9 +337,10 @@ sub process($)
              , $server->faultTryOtherProtocol($bodyel, \@other))
         if @other;
 
-    my @available = sort keys %$handlers;
+    # we do not have the names of the request body elements here :(
+    my @ports = sort keys %$handlers;
     ( RC_NOT_FOUND, 'message not recognized'
-    , $server->faultMessageNotRecognized($bodyel, $soapaction, \@available));
+    , $server->faultMessageNotRecognized($bodyel, $soapaction, \@ports));
 }
 
 =section Preparations

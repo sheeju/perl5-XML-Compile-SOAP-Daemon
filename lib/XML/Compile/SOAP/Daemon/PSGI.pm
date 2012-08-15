@@ -7,6 +7,7 @@ use base 'XML::Compile::SOAP::Daemon', 'Plack::Component';
 use Log::Report 'xml-compile-soap-daemon';
 use Encode;
 use Plack::Request;
+use Plack::Response;
 
 =chapter NAME
 
@@ -101,7 +102,12 @@ Process the content of a single message. Not to be called directly.
 sub call($)
 {   my ($self, $env) = @_;
     my $res = eval { $self->_call($env) };
-    $@ ? [ RC_SERVER_ERROR, [Content_Type => 'text/plain'], [$@] ] : $res;
+    $res ||= Plack::Response->new
+      ( RC_SERVER_ERROR
+      , [Content_Type => 'text/plain']
+      , [$@]
+      );
+    $res->finalize;
 }
 
 sub _call($;$)
@@ -164,7 +170,7 @@ sub _call($;$)
     }
 
     $res->content_length(length $bytes);
-    $res->finalize;
+    $res;
 }
 
 sub setWsdlResponse($)
@@ -186,7 +192,7 @@ sub sendWsdl($)
       , Content_Length => length($self->{wsdl_data})
       }, $self->{wsdl_data});
 
-    $res->finalize;
+    $res;
 }
 
 #-----------------------------
