@@ -180,6 +180,18 @@ Go to the F<examples/mod_perl/> directory which is included in
 the distribution of this module, M<XML::Compile::SOAP::Daemon>.
 There you find a README describing the process.
 
+=section Configuring Apache
+
+Your virtual host may need something like this:
+
+    Options     Indexes FollowSymLinks MultiViews
+    PerlHandler ModPerl::Registry
+    PerlOptions -ParseHeaders
+    AddHandler  perl-script .cgi
+    Options     +ExecCGI
+    Order       allow,deny
+    Allow       from all
+
 =cut
 
 1;

@@ -1,6 +1,16 @@
 
 === version history of XML::Compile::SOAP::Daemon
 
+TODO:
+  . trace incoming and outgoing messages.
+
+version 3.06: Fri May  3 10:07:33 CEST 2013
+
+	Improvements:
+
+	- ::CGI configuration example for Apache VirtualHost
+	  [Dan Lyke]
+
 version 3.05: Thu Aug 16 00:22:31 CEST 2012
 
 	Fixes:
