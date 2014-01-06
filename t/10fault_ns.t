@@ -207,7 +207,7 @@ compare_answer($ans7, <<__EXPECTED, 'message not found');
 404
 message not recognized
 text/xml
-charset="utf-8"
+charset=utf-8
 
 <?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">

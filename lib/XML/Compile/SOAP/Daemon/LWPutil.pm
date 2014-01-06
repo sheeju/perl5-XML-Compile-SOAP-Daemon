@@ -2,7 +2,7 @@ use warnings;
 use strict;
 
 package XML::Compile::SOAP::Daemon::LWPutil;
-use base 'Exporter';
+use parent 'Exporter';
 
 =chapter NAME
 XML::Compile::SOAP::Daemon::LWPutil - LWP helper routines
@@ -62,10 +62,10 @@ RESPONSE object (M<HTTP::Response>).  The response object is returned.
 =cut
 
 my $wsdl_response;
-sub lwp_wsdl_response(;$)
+sub lwp_wsdl_response(;$$)
 {   @_ or return $wsdl_response;
 
-    my $file = shift;
+    my ($file, $ft) = @_;
     $file && !ref $file
         or return $wsdl_response = $file;
 
@@ -76,10 +76,11 @@ sub lwp_wsdl_response(;$)
     my $spec = <SRC>;
     close SRC;
 
+    $ft ||= 'application/wsdl+xml';
     $wsdl_response = HTTP::Response->new
       ( RC_OK, "WSDL specification"
       , [ @default_headers
-        , "Content-Type" => 'application/wsdl+xml; charset="utf-8"'
+        , "Content-Type" => "$ft; charset=utf-8"
         ]
       , $spec
       );
@@ -169,7 +170,7 @@ sub lwp_make_response($$$$;$)
     my $s;
     if(UNIVERSAL::isa($body, 'XML::LibXML::Document'))
     {   $s = $body->toString($status == RC_OK ? 0 : 1);
-        $response->header('Content-Type' => 'text/xml; charset="utf-8"');
+        $response->header('Content-Type' => 'text/xml; charset=utf-8');
     }
     else
     {   $s = "[$status] $body";

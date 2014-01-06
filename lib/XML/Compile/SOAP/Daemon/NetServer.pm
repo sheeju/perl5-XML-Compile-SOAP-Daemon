@@ -5,7 +5,7 @@ package XML::Compile::SOAP::Daemon::NetServer;
 
 # The selected type of netserver gets added to the @ISA during new(),
 # so there are two base-classes!
-use base 'XML::Compile::SOAP::Daemon';
+use parent 'XML::Compile::SOAP::Daemon';
 our @ISA;
 
 use Log::Report 'xml-compile-soap-daemon';
@@ -167,10 +167,10 @@ sub post_bind_hook()
     lwp_socket_init $_ for @{$prop->{sock}};
 }
 
-sub setWsdlResponse($)
-{   my ($self, $fn) = @_;
+sub setWsdlResponse($;$)
+{   my ($self, $fn, $ft) = @_;
     trace "setting wsdl response to $fn";
-    lwp_wsdl_response $fn;
+    lwp_wsdl_response $fn, $ft;
 }
 
 # Overrule Net::Server's log() to translate it into Log::Report calls

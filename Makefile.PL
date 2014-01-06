@@ -2,12 +2,12 @@ use ExtUtils::MakeMaker;
 
 use 5.008;
 
-my $version = '3.06';
+my $version = '3.07';
 
 my %prereq =
   ( XML::Compile         => 1.26
-  , XML::Compile::SOAP   => 2.29
-  , XML::Compile::Tester => 0.90
+  , XML::Compile::SOAP   => '3.00'
+  , XML::Compile::Tester => '0.90'
   , XML::Compile::Cache  => 0.991
 
   , Log::Report     => 0.90
@@ -30,10 +30,10 @@ my %prereq =
   );
 
 # only update WSA if installed
-eval "require XML::Compile::SOAP::WSA";
+eval "require XML::Compile::WSA";
 unless($@)
-{   my $v = $XML::Compile::SOAP::WSA::VERSION || '';
-    $prereq{'XML::Compile::SOAP::WSA'} = 0.12;
+{   my $v = $XML::Compile::WSA::VERSION || '';
+    $prereq{'XML::Compile::WSA'} = 0.90;
 }
 
 WriteMakefile

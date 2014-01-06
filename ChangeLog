@@ -4,22 +4,30 @@
 TODO:
   . trace incoming and outgoing messages.
 
+version 3.07: Mon Jan  6 23:19:49 CET 2014
+
+	Fixes:
+	- ::AnyDaemon fix parameters [Theo Bot]
+	- adapt to changes in XML::Compile::SOAP.
+	  rt.cpan.org#91900 [Raffeallo Galli]
+
+	Improvements:
+	- use parent, to replace use base.
+	- ::setWsdlResponse() now can have mime-type parameter
+
 version 3.06: Fri May  3 10:07:33 CEST 2013
 
 	Improvements:
-
 	- ::CGI configuration example for Apache VirtualHost
 	  [Dan Lyke]
 
 version 3.05: Thu Aug 16 00:22:31 CEST 2012
 
 	Fixes:
-
 	- various minor improvements to the new ::PSGI backend.
 	  [Piotr Roszatycki]
 
 	Improvements:
-
 	- additional regression test for psgi.
 	  [Piotr Roszatycki].
 

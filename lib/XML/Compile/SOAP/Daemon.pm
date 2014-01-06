@@ -2,7 +2,6 @@ use warnings;
 use strict;
 
 package XML::Compile::SOAP::Daemon;
-our @ISA;   # filled-in at new().
 
 use Log::Report 'xml-compile-soap-daemon';
 
@@ -36,6 +35,7 @@ XML::Compile::SOAP::Daemon - SOAP accepting server (base class)
  $daemon->operationsFromWSDL($wsdl, callbacks => ...);
 
  $daemon->setWsdlResponse($wsdl_fn);
+ $daemon->setWsdlResponse($wsdl_fn, $soap11->mediaType);
 
  # operation definitions added manually
  my $soap11  = XML::Compile::SOAP11::Server->new(schemas => $wsdl->schemas);
@@ -157,7 +157,7 @@ sub init($)
         error __x"new(support_soap} removed in 2.00";
     }
 
-    my @classes = XML::Compile::SOAP::Operation->registered;
+    my @classes = XML::Compile::SOAP->registered;
     @classes   # explicit load required since 2.00
         or warning "No protocol modules loaded.  Need XML::Compile::SOAP11?";
 
@@ -278,7 +278,7 @@ sub process($)
         or return $self->faultNotSoapMessage(type_of_node $xmlin);
 
     my $envns  = $xmlin->namespaceURI || '';
-    my $proto  = XML::Compile::SOAP::Operation->fromEnvelope($envns)
+    my $proto  = XML::Compile::SOAP->fromEnvelope($envns)
         or return $self->faultUnsupportedSoapVersion($envns);
     # proto is a XML::Compile::SOAP*::Operation
     my $server = $proto->serverClass;
@@ -374,9 +374,9 @@ the C<service>, C<port>, and C<binding> OPTIONS for
 M<XML::Compile::WSDL11::operations()>.
 
 =example
- $wsdl->operationsFromWSDL($wsdl, service => 'MyService',
+ $daemon->operationsFromWSDL($wsdl, service => 'MyService',
     binding => 'MyService-soap11', callbacks => {get => \$f11});
- $wsdl->operationsFromWSDL($wsdl, service => 'MyService-test',
+ $daemonwsdl->operationsFromWSDL($wsdl, service => 'MyService-test',
     binding => 'MyService-soap12', callbacks => {get => \$f12});
 =cut
 
@@ -455,13 +455,15 @@ sub addHandler($$$)
     $self->{handler}{$version}{$name} = $code;
 }
 
-=method setWsdlResponse FILENAME
+=method setWsdlResponse FILENAME, [FILETYPE]
 Many existing SOAP servers will reponse to GET queries which end on "?WSDL"
 by sending the WSDL in use by the service.
+
+The default FILETYPE is C<application/wsdl+xml>.  You may need C<text/xml>
 =cut
 
-sub setWsdlResponse($)
-{   my ($self, $filename) = @_;
+sub setWsdlResponse($;$)
+{   my ($self, $filename, $type) = @_;
     panic "not implemented by backend {pkg}", pkg => (ref $self || $self);
 }
 

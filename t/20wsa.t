@@ -30,8 +30,8 @@ BEGIN
     eval "require XML::Compile::SOAP::WSA";
     $@ && plan skip_all => "XML::Compile::SOAP::WSA not installed";
 
-    eval "require XML::Compile::SOAP::WSA::Util";
-    XML::Compile::SOAP::WSA::Util->import(qw/WSDL11WSAW WSA10/);
+    eval "require XML::Compile::WSA::Util";
+    XML::Compile::WSA::Util->import(qw/WSDL11WSAW WSA10/);
 
 }
 
@@ -115,6 +115,8 @@ $daemon->operationsFromWSDL($wsdl
   , callbacks =>
      { opCheckAvailability => sub () {
            my ($server, $data) = @_;
+#use Data::Dumper;
+#print STDERR Dumper \@_;
            is($data->{body}, 'ping');
 #warn "CALLOP ", Dumper $data;
            +{body => 'yes', wsa_MessageID => 'the reply'}
