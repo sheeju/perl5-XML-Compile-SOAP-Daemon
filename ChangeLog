@@ -4,6 +4,11 @@
 TODO:
   . trace incoming and outgoing messages.
 
+version 3.08: Wed Jan  8 00:56:28 CET 2014
+
+	Fixes:
+	- depend on new XML::Compile::WSDL11 [cpantesters]
+
 version 3.07: Mon Jan  6 23:19:49 CET 2014
 
 	Fixes:
