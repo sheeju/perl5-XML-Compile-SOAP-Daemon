@@ -46,21 +46,20 @@ HTTP transport specifics of SOAP messages.
 
 =section Constructors
 
-=c_method new OPTIONS
+=c_method new %options
 =cut
 
 #--------------------
-
 =section Running the server
 
-=method runCgiRequest OPTIONS
+=method runCgiRequest %options
 
 =option  query <CGI object>
 =default query <created internally>
 
 =option  postprocess CODE
 =default postprocess C<undef>
-When defined, the CODE will get called with a HASH (containing OPTIONS
+When defined, the CODE will get called with a HASH (containing %options
 and other compile information), a HASH of headers (which you may change),
 the HTTP return code, and a reference to the message body (which may be
 changed as well).
@@ -73,12 +72,16 @@ Content-Length will be added to the headers after the call.
 
 sub runCgiRequest(@) {shift->run(@_)}
 
-=method run OPTIONS
+=method run %options
 Used by M<runCgiRequest()> to process a connection. Not to be called
 directly.
 
-=method process OPTIONS
+=method process %options
 Process the content of a single message. Not to be called directly.
+
+=option  nph BOOLEAN
+=default nph <true>
+For FCGI, you probably need to set this to a false value.
 =cut
 
 # called by SUPER::run()
@@ -87,11 +90,12 @@ sub _run($;$)
 
     my $q      = $test_cgi || $args->{query} || CGI->new;
     my $method = $ENV{REQUEST_METHOD} || 'POST';
+    my $qs     = $ENV{QUERY_STRING}   || '';
     my $ct     = $ENV{CONTENT_TYPE}   || 'text/plain';
     $ct =~ s/\;\s.*//;
 
     return $self->sendWsdl($q)
-        if $method eq 'GET' && url =~ m/ \? WSDL $ /x;
+        if $method eq 'GET' && uc($qs) eq 'WSDL';
 
     my ($rc, $msg, $err, $mime, $bytes);
     if($method ne 'POST' && $method ne 'M-POST')
@@ -127,7 +131,7 @@ sub _run($;$)
       ( -status  => "$rc $msg"
       , -type    => $mime
       , -charset => 'utf-8'
-      , -nph     => 1
+      , -nph     => ($args->{nph} ? 1 : 0)
       );
 
     if(my $pp = $args->{postprocess})

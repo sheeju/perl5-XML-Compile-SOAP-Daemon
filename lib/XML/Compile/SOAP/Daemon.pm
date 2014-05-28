@@ -93,7 +93,7 @@ the time.
 
 =section Constructors
 
-=c_method new OPTIONS
+=c_method new %options
 
 =option  output_charset STRING
 =default output_charset 'UTF-8'
@@ -166,6 +166,7 @@ sub init($)
     $self;
 }
 
+#-----------
 =section Attributes
 
 =method outputCharset
@@ -174,7 +175,7 @@ The character-set to be used for output documents.
 
 sub outputCharset() {shift->{output_charset}}
 
-=method addWsaTable ('INPUT'|'OUTPUT'), [HASH|PAIRS]
+=method addWsaTable <'INPUT'|'OUTPUT'>, [HASH|PAIRS]
 Map operation name onto respectively server-input or server-output
 messages, used for C<wsa:Action> fields in the header. Usually, these
 values are automatically taken from the WSDL (but only if the WSA
@@ -210,33 +211,31 @@ sub addSoapAction(@)
     $t;
 }
 
+#------------------
 =section Running the server
 
-=method run OPTIONS
+=method run %options
 How the daemon is run depends much on the extension being used. See the
 C<::NetServer> and C<::CGI> manual-page.
 =cut
 
 sub run(@)
 {   my ($self, %args) = @_;
- eval {
     notice __x"WSA module loaded, but not used"
         if XML::Compile::SOAP::WSA->can('new') && !keys %{$self->{wsa_input}};
 
     $self->{wsa_input_rev}  = +{ reverse %{$self->{wsa_input}} };
     $self->_run(\%args);
- };
- error $@ if $@;
 }
 
-=method process CLIENT, XMLIN, REQUEST, ACTION
+=method process $client, $xmlin, $request, $action
 This method is called to process a single request.
-The XMLIN is a SOAP-structured message (an M<XML::LibXML::Element>,
-M<XML::LibXML::Document>, or XML as string), was received from the CLIENT
+The $xmlin is a SOAP-structured message (an M<XML::LibXML::Element>,
+M<XML::LibXML::Document>, or XML as string), was received from the $client
 (some extension specific object).
 
-The full REQUEST is passed in, however its format depends on the
-kind of server. The ACTION parameter relates to the soapAction header
+The full $request is passed in, however its format depends on the
+kind of server. The $action parameter relates to the soapAction header
 field which may be available in some form.
 
 Returned is an XML document (M<XML::LibXML::Document>) as answer or a
@@ -334,29 +333,32 @@ sub process($)
         $self->soapVersions;
 
     return (RC_SEE_OTHER, 'SOAP protocol not in use'
-             , $server->faultTryOtherProtocol($bodyel, \@other))
+      , $server->faultTryOtherProtocol($bodyel, \@other))
         if @other;
 
     # we do not have the names of the request body elements here :(
     my @ports = sort keys %$handlers;
-    ( RC_NOT_FOUND, 'message not recognized'
-    , $server->faultMessageNotRecognized($bodyel, $soapaction, \@ports));
+
+      ( RC_NOT_FOUND, 'message not recognized'
+      , $server->faultMessageNotRecognized($bodyel, $soapaction, \@ports)
+      );
 }
 
+#------------------
 =section Preparations
 
-=method operationsFromWSDL WSDL, OPTIONS
-Compile the operations found in the WSDL object (an
+=method operationsFromWSDL $wsdl, %options
+Compile the operations found in the $wsdl object (an
 M<XML::Compile::WSDL11>).  You can add the operations from many different
 WSDLs into one server, simply by calling this method repeatedly.
 
-You can also specify OPTIONS for M<XML::Compile::WSDL11::operations()>.
+You can also specify %options for M<XML::Compile::WSDL11::operations()>.
 Those parameters may be needed to distinguish between the test-server
 and the live-server, provided protocol support and such.
 
 =option  callbacks HASH
 =default callbacks {}
-The keys are the port names, as defined in the WSDL.  The values are CODE
+The keys are the port names, as defined in the $wsdl.  The values are CODE
 references which are called in case a message is received which is
 addressing the port (this is a guess). See L</Operation handlers>
 
@@ -370,7 +372,7 @@ be returned.  See L</Operation handlers>
 =default operations undef
 Load the selected operations only (M<XML::Compile::SOAP::Operation> objects)
 If not specified, all operations will be taken which are selected with
-the C<service>, C<port>, and C<binding> OPTIONS for
+the C<service>, C<port>, and C<binding> %options for
 M<XML::Compile::WSDL11::operations()>.
 
 =example
@@ -395,7 +397,7 @@ sub operationsFromWSDL($@)
 
     foreach my $op (@ops)
     {   my $name = $op->name;
-        warning "multiple operations with name {name}", name => $name
+        warning __x"multiple operations with name `{name}'", name => $name
             if $names{$name}++;
 
         my $code;
@@ -409,9 +411,8 @@ sub operationsFromWSDL($@)
         }
         else
         {   trace __x"add stub handler for operation `{name}'", name => $name;
-            my $server  = $op->serverClass;
             my $handler = $default_cb
-              || sub { $server->faultNotImplemented($name) };
+              || sub { $_[0]->faultNotImplemented($name) };
 
             $code = $op->compileHandler(callback => $handler);
         }
@@ -438,9 +439,9 @@ sub operationsFromWSDL($@)
     $self;
 }
 
-=method addHandler NAME, SOAP, CODE
-The SOAP value is C<SOAP11>, C<SOAP12>, or a SOAP server object or and
-SOAP Operation object.  The CODE reference is called with the incoming
+=method addHandler $name, $soap, CODE
+The $soap value is C<SOAP11>, C<SOAP12>, or a $soap server object or and
+$soap Operation object.  The CODE reference is called with the incoming
 document (an XML::LibXML::Document) of the received input message.
 
 In case the handler does not understand the message, it should
@@ -455,11 +456,11 @@ sub addHandler($$$)
     $self->{handler}{$version}{$name} = $code;
 }
 
-=method setWsdlResponse FILENAME, [FILETYPE]
-Many existing SOAP servers will reponse to GET queries which end on "?WSDL"
+=method setWsdlResponse $filename, [$filetype]
+Many existing SOAP servers will response to GET queries which end on "?WSDL"
 by sending the WSDL in use by the service.
 
-The default FILETYPE is C<application/wsdl+xml>.  You may need C<text/xml>
+The default $filetype is C<application/wsdl+xml>.  You may need C<text/xml>
 =cut
 
 sub setWsdlResponse($;$)
@@ -467,9 +468,10 @@ sub setWsdlResponse($;$)
     panic "not implemented by backend {pkg}", pkg => (ref $self || $self);
 }
 
+#------------------
 =section Helpers
 
-=method handlers ('SOAP11'|'SOAP12'|SOAP)
+=method handlers <'SOAP11'|'SOAP12'|$soap>
 Returns all the handler names for a certain soap version.
 =example
  foreach my $version (sort $server->soapVersions)
@@ -491,7 +493,7 @@ sub handlers($)
 
 sub soapVersions() { sort keys %{shift->{handler}} }
 
-=method printIndex [FILEHANDLE]
+=method printIndex [$fh]
 Print a table which shows the messages that the server can handle,
 by default to STDOUT.
 =cut
@@ -509,7 +511,7 @@ sub printIndex(;$)
     }
 }
 
-=method faultInvalidXML ERROR
+=method faultInvalidXML $error
 =cut
 
 sub faultInvalidXML($)
@@ -518,7 +520,7 @@ sub faultInvalidXML($)
     , __x("The XML cannot be parsed: {error}", error => $error));
 }
 
-=method faultNotSoapMessage NODETYPE
+=method faultNotSoapMessage $nodetype
 =cut
 
 sub faultNotSoapMessage($)
@@ -528,7 +530,7 @@ sub faultNotSoapMessage($)
          , type => $type));
 }
 
-=method faultUnsupportedSoapVersion ENV_NS
+=method faultUnsupportedSoapVersion $env_ns
 Produces a text message, because we do not know how to produce
 an error in a SOAP which we do not understand.
 =cut
@@ -539,6 +541,7 @@ sub faultUnsupportedSoapVersion($)
     , __x("The soap version `{envns}' is not supported", envns => $envns));
 }
 
+#------------------
 =chapter DETAILS
 
 =section Operation handlers

@@ -39,7 +39,7 @@ sub lwp_action_from_header($);
 =chapter FUNCTIONS
 =cut
 
-=function lwp_add_header FIELD, CONTENT, ...
+=function lwp_add_header $field, $content, ...
 =cut
 
 our @default_headers;
@@ -55,10 +55,10 @@ BEGIN
 
 sub lwp_add_header($$@) { push @default_headers, @_ }
 
-=function lwp_wsdl_response [WSDLFILE|RESPONSE]
+=function lwp_wsdl_response [$wsdlfile|$response]
 Set the result of WSDL query responses, either to a response which
-is created internally containing WSDLFILE, or to an already complete
-RESPONSE object (M<HTTP::Response>).  The response object is returned.
+is created internally containing $wsdlfile, or to an already complete
+$response object (M<HTTP::Response>).  The response object is returned.
 =cut
 
 my $wsdl_response;
@@ -86,7 +86,7 @@ sub lwp_wsdl_response(;$$)
       );
 }
     
-=function lwp_handle_connection CONNECTION, OPTIONS
+=function lwp_handle_connection $connection, %options
 =cut
 
 sub lwp_handle_connection($@)
@@ -116,9 +116,9 @@ sub lwp_handle_connection($@)
     }
 }
 
-=function lwp_run_request REQUEST, HANDLER, [CONNECTION, POSTPROC]
-Handle one REQUEST (M<HTTP::Request> object), which was received from
-the CLIENT (string).  When the request has been received, the HANDLER
+=function lwp_run_request $request, $handler, [$connection, $postproc]
+Handle one $request (M<HTTP::Request> object), which was received from
+the CLIENT (string).  When the request has been received, the $handler
 is called. Returns the status, the status as text message, and the
 output as M<XML::LibXML::Document>.
 =cut
@@ -130,7 +130,7 @@ sub lwp_run_request($$;$$)
     return $wsdl_response
         if $wsdl_response
         && $request->method eq 'GET'
-        && $request->uri->path_query =~ m! \? WSDL $ !x;
+        && uc($request->uri->query || '') eq 'WSDL';
 
     if($request->method !~ m/^(?:M-)?POST/ )
     {   return lwp_make_response $request
@@ -157,7 +157,7 @@ sub lwp_run_request($$;$$)
     lwp_make_response $request, $status, $status_msg, $xml, $postproc;
 }
 
-=function lwp_make_response REQUEST, RC, MSG, BODY, [POSTPROC]
+=function lwp_make_response $request, $rc, $msg, $body, [$postproc]
 =cut
 
 sub lwp_make_response($$$$;$)
@@ -191,7 +191,7 @@ sub lwp_make_response($$$$;$)
     $response;
 }
 
-=function lwp_action_from_header REQUEST
+=function lwp_action_from_header $request
 Collect the soap action URI from the request, with C<undef> on failure.
 Officially, the "SOAPAction" has no other purpose than the ability to
 route messages over HTTP: it should not be linked to the portname of
@@ -224,8 +224,8 @@ sub lwp_action_from_header($)
     $action;
 }
 
-=function lwp_socket_init SOCKET
-Initialize LWP usage based on a created SOCKET.
+=function lwp_socket_init $socket
+Initialize LWP usage based on a created $socket.
 =cut
 
 sub lwp_socket_init($)
@@ -237,8 +237,8 @@ sub lwp_socket_init($)
     error $@ if $@;
 }
 
-=function lwp_http11_connection DAEMON, SOCKET
-Initialize a HTTP/1.1 connect on the client SOCKET.
+=function lwp_http11_connection $daemon, $socket
+Initialize a HTTP/1.1 connect on the client $socket.
 =cut
 
 sub lwp_http11_connection($$)

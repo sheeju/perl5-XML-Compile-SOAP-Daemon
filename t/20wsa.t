@@ -45,9 +45,9 @@ my $SchemaNS = SCHEMA2001;
 
 my $ressvc = "http://greath.example.com/2004/schemas/resSvc";
 my $types  = "urn:anything";
-my $wsaw   = WSDL11WSAW;
+my $wsaw   = &WSDL11WSAW;
 my $xsd    = SCHEMA2001;
-my $wsans  = WSA10;
+my $wsans  = &WSA10;
 
 my $xml_wsdl = <<__WSDL;
 <?xml version="1.0"?>

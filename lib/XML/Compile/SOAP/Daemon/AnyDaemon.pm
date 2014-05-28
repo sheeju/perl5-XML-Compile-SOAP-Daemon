@@ -64,11 +64,11 @@ not implemented yet.
 
 =chapter METHODS
 
-=c_method new OPTIONS
+=c_method new %options
 Create the server handler, which extends some class which implements
 a M<Net::Server> daemon.
 
-As OPTIONS, you can pass everything accepted by M<Any::Daemon::new()>,
+As %options, you can pass everything accepted by M<Any::Daemon::new()>,
 like C<pid_file>, C<user>, C<group>, and C<workdir>,
 =cut
 
@@ -87,7 +87,7 @@ sub setWsdlResponse($;$)
 #-----------------------
 =section Running the server
 
-=method run OPTIONS
+=method run %options
 
 =option  server_name   STRING
 =default server_name   C<undef>
@@ -144,6 +144,7 @@ database-connection.
 
 sub _run($)
 {   my ($self, $args) = @_;
+
     my $name = $args->{server_name} || 'soap server';
     lwp_add_header
        'X-Any-Daemon-Version' => $Any::Daemon::VERSION
@@ -168,7 +169,7 @@ sub _run($)
     lwp_socket_init $socket;
 
     $self->{XCSDA_conn_opts} =
-      { expires     => ($args->{client_timeout}  ||  30)
+     +{ expires     => ($args->{client_timeout}  ||  30)
       , maxmsgs     => ($args->{client_maxreq}   || 100)
       , reqbonus    => ($args->{client_reqbonus} ||   0)
       , postprocess => $args->{postprocess}
@@ -201,7 +202,7 @@ sub handle_connection($)
     eval {
         lwp_handle_connection $connection
           , %$conn_opts
-          , expires  => time() + $conn_opts->{client_timeout}
+          , expires  => time() + $conn_opts->{expires}
           , handler  => sub {$self->process(@_)}
     };
     info __x"connection ended with force; {error}", error => $@

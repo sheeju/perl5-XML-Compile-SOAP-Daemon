@@ -2,10 +2,12 @@ use ExtUtils::MakeMaker;
 
 use 5.008;
 
-my $version = '3.08';
+my $version = '3.09';
 
-my %prereq =
-  ( XML::Compile         => 1.26
+my $devel   = exists $ENV{MARKOV_DEVEL};
+
+my %prereq  =
+  ( XML::Compile         => 1.44
   , XML::Compile::SOAP   => '3.00'
   , XML::Compile::WSDL11 => '3.00'
   , XML::Compile::Tester => '0.90'
@@ -32,9 +34,15 @@ my %prereq =
 
 # only update WSA if installed
 eval "require XML::Compile::WSA";
-unless($@)
+unless($@ || $devel)
 {   my $v = $XML::Compile::WSA::VERSION || '';
-    $prereq{'XML::Compile::WSA'} = 0.90;
+    $prereq{'XML::Compile::WSA'} = '0.90';
+}
+
+eval "require XML::Compile::SOAP12";
+unless($@ || $devel)
+{   my $v = $XML::Compile::SOAP12::VERSION || '';
+    $prereq{'XML::Compile::SOAP12'} = '3.01';
 }
 
 WriteMakefile

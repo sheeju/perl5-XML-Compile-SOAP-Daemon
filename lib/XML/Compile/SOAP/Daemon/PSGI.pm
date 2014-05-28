@@ -49,7 +49,7 @@ use constant
 
 #--------------------
 
-=c_method new OPTIONS
+=c_method new %options
 
 =option  preprocess CODE
 =default preprocess C<undef>
@@ -76,7 +76,7 @@ sub init($)
 =method to_app
 Converts the server into a PSGI C<$app>.
 
-=method run OPTIONS
+=method run %options
 The same as B<to_app> but accepts additional B<preprocess> and
 B<postprocess> options.
 =cut
@@ -94,7 +94,7 @@ sub _init($)
     $self;
 }
 
-=method call ENV
+=method call $env
 Process the content of a single message. Not to be called directly.
 =cut
 

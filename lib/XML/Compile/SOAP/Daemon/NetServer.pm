@@ -64,7 +64,7 @@ not implemented yet.
 
 =chapter METHODS
 
-=c_method new OPTIONS
+=c_method new %options
 Create the server handler, which extends some class which implements
 a M<Net::Server> daemon. Any daemon configuration parameter should
 be passed with M<run()>.  This is a little tricky.  Read below in the
@@ -188,8 +188,8 @@ sub write_to_log_hook { panic "write_to_log_hook cannot be used" }
 
 =section Running the server
 
-=method run OPTIONS
-See M<Net::Server::run()>, but the OPTIONS are passed as list, not
+=method run %options
+See M<Net::Server::run()>, but the %options are passed as list, not
 as HASH. You may pass any option to which accepted by the M<Net::Server>
 extension you are using.
 

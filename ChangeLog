@@ -4,6 +4,19 @@
 TODO:
   . trace incoming and outgoing messages.
 
+version 3.09: Wed May 28 09:26:56 CEST 2014
+
+	Fixes:
+	- ::AnyDaemon warning on use of connection timout (expires)
+	- t/wsa.t use of constants with perl 5.18.2 [cpantesters]
+
+	Improvements:
+	- faultNotImplemented called as instance method.
+	- change documentation style.
+	- ::Daemon::CGI support for fcgi, only needs run(nph => 0) [Immo]
+	- request for ?wsdl now case insensitive
+	- improve example/any-daemon script
+
 version 3.08: Wed Jan  8 00:56:28 CET 2014
 
 	Fixes:
