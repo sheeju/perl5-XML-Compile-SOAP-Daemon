@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 # Check whether the wsaAction is used for message selection.
 # file.
 
@@ -17,23 +17,20 @@ use XML::Compile::Transport::SOAPHTTP;
 use XML::Compile::Tester;
 use Test::More;
 
-BEGIN
-{   eval "require Net::Server";
-    my $has_net_server = $@ ? 0 : 1;
+eval "require Net::Server";
+my $has_net_server = $@ ? 0 : 1;
 
-    eval "require LWP";
-    my $has_lwp = $@ ? 0 : 1;
+eval "require LWP";
+my $has_lwp = $@ ? 0 : 1;
 
-    plan skip_all => "Net::Server and LWP are need"
-        unless $has_net_server && $has_lwp;
+plan skip_all => "Net::Server and LWP are need"
+    unless $has_net_server && $has_lwp;
 
-    eval "require XML::Compile::SOAP::WSA";
-    $@ && plan skip_all => "XML::Compile::SOAP::WSA not installed";
+eval "require XML::Compile::SOAP::WSA";
+$@ && plan skip_all => "XML::Compile::SOAP::WSA not installed";
 
-    eval "require XML::Compile::WSA::Util";
-    XML::Compile::WSA::Util->import(qw/WSDL11WSAW WSA10/);
-
-}
+eval "require XML::Compile::WSA::Util";
+XML::Compile::WSA::Util->import(qw/WSDL11WSAW WSA10/);
 
 plan tests => 10;
 require_ok('XML::Compile::SOAP::Daemon::NetServer');
