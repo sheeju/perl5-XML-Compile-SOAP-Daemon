@@ -169,7 +169,7 @@ sub _run($)
     lwp_socket_init $socket;
 
     $self->{XCSDA_conn_opts} =
-     +{ expires     => ($args->{client_timeout}  ||  30)
+     +{ timeout     => ($args->{client_timeout}  ||  30)
       , maxmsgs     => ($args->{client_maxreq}   || 100)
       , reqbonus    => ($args->{client_reqbonus} ||   0)
       , postprocess => $args->{postprocess}
@@ -202,7 +202,7 @@ sub handle_connection($)
     eval {
         lwp_handle_connection $connection
           , %$conn_opts
-          , expires  => time() + $conn_opts->{expires}
+          , expires  => time() + $conn_opts->{timeout}
           , handler  => sub {$self->process(@_)}
     };
     info __x"connection ended with force; {error}", error => $@

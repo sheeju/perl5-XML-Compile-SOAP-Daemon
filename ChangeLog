@@ -4,6 +4,11 @@
 TODO:
   . trace incoming and outgoing messages server-side
 
+version 3.11: Wed Jan 14 10:22:53 CET 2015
+
+	Fixes:
+	- ::Daemon::AnyDaemon calculation of request timeout
+
 version 3.10: Wed Nov 26 08:45:03 CET 2014
 
 	Fixes:
