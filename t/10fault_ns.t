@@ -18,17 +18,17 @@ BEGIN
     eval "require LWP";
     my $has_lwp = $@ ? 0 : 1;
 
-    plan skip_all => "Net::Server and LWP are need"
-        unless $has_net_server && $has_lwp;
+    $has_net_server && $has_lwp
+        or plan skip_all => "Net::Server and LWP are required for these tests";
 
-    plan skip_all => "Please contribute by porting tests to Windows"
-       if $^O eq 'MSWin32';
+    $^O ne 'MSWin32'
+        or plan skip_all => "Please contribute by porting tests to Windows";
 }
 
 use constant
- { SERVERHOST => 'localhost'
- , SERVERPORT => 8876
- };
+  { SERVERHOST => 'localhost'
+  , SERVERPORT => 8876
+  };
 
 plan tests => 18;
 

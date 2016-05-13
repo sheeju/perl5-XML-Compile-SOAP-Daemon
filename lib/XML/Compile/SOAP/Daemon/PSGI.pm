@@ -207,6 +207,26 @@ Roszatycki in March 2012.
 Go to the F<examples/mod_perl/> directory which is included in the
 distribution of this module, M<XML::Compile::SOAP::Daemon> There you
 find a README describing the process.
+
+=section Using Basic Authenication
+
+[example contributed by Emeline Thibault]
+
+  my $daemon = XML::Compile::SOAP::Daemon::PSGI->new(...);
+  $daemon->operationsFromWSDL($wsdl, callbacks => {...});
+
+  use Plack::Middleware::Auth::Basic;
+  my %map = ( admin => "password" );
+  builder {
+    enable "Auth::Basic", authenticator => \&cb;
+    $daemon;
+  };
+
+  sub cb {
+    my ( $username, $password ) = @_;
+    return $map{$username} && $password eq $map{$username};
+  }
+
 =cut
 
 1;

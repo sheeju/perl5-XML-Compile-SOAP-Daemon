@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 # Attempt to produce all errors for CGI backend
 
 use warnings;

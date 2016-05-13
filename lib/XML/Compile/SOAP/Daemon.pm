@@ -618,6 +618,11 @@ These can also be used with valid answers, not limited to errors. There
 is no clear definition how SOAP faults and HTTP return codes should work
 together for user errors.
 
+B<Be warned> that WCF (MicroSoft's .NET) interprets the return code in
+SOAP1.2 style, not SOAP1.1.  The 1.2 specification says that only
+_RETURN_CODE 200 and 202 can contain a SOAP respons.  Other servers will
+code the content for any 2xx code.
+
 =subsection Returning private errors
 
 In a WSDL, we can specify own fault types. These defined elements describe

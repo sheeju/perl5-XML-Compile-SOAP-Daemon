@@ -177,7 +177,7 @@ sub setWsdlResponse($;$)
 sub log($$@)
 {   my ($self, $level, $msg) = (shift, shift, shift);
     $msg = sprintf $msg, @_ if @_;
-    $msg =~ s/\n$//g;  # some log lines have a trailing newline
+    chomp $msg;  # some log lines have a trailing newline
 
     my $reason = $levelToReason[$level] or return;
     report $reason => $msg;

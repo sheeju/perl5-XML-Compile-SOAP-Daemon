@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 # Attempt to produce all errors for CGI backend
 
 use warnings;
@@ -8,20 +8,21 @@ use Test::More;
 use XML::Compile::WSDL11;
 use XML::Compile::SOAP11;
 use XML::Compile::SOAP::Util ':soap11';
-use XML::Compile::SOAP::Daemon::CGI;
 my $soapenv = SOAP11ENV;
 
 BEGIN
 {   eval "require CGI";
     my $has_cgi = $@ ? 0 : 1;
 
-    plan skip_all => "CGI is needed"
-        unless $has_cgi;
+    $has_cgi
+        or plan skip_all => "CGI is required for these tests";
 }
 
-plan tests => 8;
+plan tests => 9;
 
 require_ok('CGI');
+
+use_ok('XML::Compile::SOAP::Daemon::CGI');
 
 my $daemon = XML::Compile::SOAP::Daemon::CGI->new;
 isa_ok($daemon, 'XML::Compile::SOAP::Daemon::CGI');

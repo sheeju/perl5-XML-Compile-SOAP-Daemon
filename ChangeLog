@@ -4,6 +4,15 @@
 TODO:
   . trace incoming and outgoing messages server-side
 
+version 3.12: Fri 13 May 21:21:11 CEST 2016
+
+	Fixes:
+	- test for availability of CGI.pm [cpantesters]
+
+	Improvements:
+	- add example of basic-auth in Plack to ::PSGI
+	  [Emeline Thibault]
+
 version 3.11: Wed Jan 14 10:22:53 CET 2015
 
 	Fixes:
