@@ -263,7 +263,7 @@ sub process($)
     }
     elsif(ref $input eq 'SCALAR')
     {   $xmlin = try { $parser->parse_string($$input) };
-        return $self->faultInvalidXML($@->died) if $@;
+        return $self->faultInvalidXML($@->wasFatal) if $@;
     }
     else
     {   $xmlin = $input;
