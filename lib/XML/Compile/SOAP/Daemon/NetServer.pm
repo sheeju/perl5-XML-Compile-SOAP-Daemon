@@ -1,7 +1,11 @@
-use warnings;
-use strict;
+# This code is part of distribution XML-Compile-SOAP-Daemon.  Meta-POD
+# processed with OODoc into POD and HTML manual-pages.  See README.md
+# Copyright Mark Overmeer.  Licensed under the same terms as Perl itself.
 
 package XML::Compile::SOAP::Daemon::NetServer;
+
+use warnings;
+use strict;
 
 # The selected type of netserver gets added to the @ISA during new(),
 # so there are two base-classes!

@@ -1,7 +1,11 @@
-use warnings;
-use strict;
+# This code is part of distribution XML-Compile-SOAP-Daemon.  Meta-POD
+# processed with OODoc into POD and HTML manual-pages.  See README.md
+# Copyright Mark Overmeer.  Licensed under the same terms as Perl itself.
 
 package XML::Compile::SOAP::Daemon;
+
+use warnings;
+use strict;
 
 use Log::Report 'xml-compile-soap-daemon';
 
@@ -22,6 +26,7 @@ use constant
 my $parser        = XML::LibXML->new;
 
 =chapter NAME
+
 XML::Compile::SOAP::Daemon - SOAP accepting server (base class)
 
 =chapter SYNOPSIS

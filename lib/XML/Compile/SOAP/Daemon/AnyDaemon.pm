@@ -1,7 +1,11 @@
-use warnings;
-use strict;
+# This code is part of distribution XML-Compile-SOAP-Daemon.  Meta-POD
+# processed with OODoc into POD and HTML manual-pages.  See README.md
+# Copyright Mark Overmeer.  Licensed under the same terms as Perl itself.
 
 package XML::Compile::SOAP::Daemon::AnyDaemon;
+
+use warnings;
+use strict;
 
 # Any::Daemon at least version 0.13
 use parent 'XML::Compile::SOAP::Daemon', 'Any::Daemon';
