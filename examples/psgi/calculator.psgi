@@ -12,6 +12,7 @@ use strict;
 use XML::Compile::SOAP::Daemon::PSGI;
 use XML::Compile::WSDL11;
 use XML::Compile::SOAP11;
+use XML::Compile::SOAP12;
 
 use XML::Compile::Util       'pack_type';
 use XML::Compile::SOAP::Util 'SOAP11ENV';
@@ -51,12 +52,12 @@ $daemon->operationsFromWSDL(
                 Result => $data->{parameters}->{x} + $data->{parameters}->{y},
             };
         },
-        subtract => sub {
-            my ($soap, $data) = @_;
-            return +{
-                Result => $data->{parameters}->{x} - $data->{parameters}->{y},
-            };
-        },
+        # subtract => sub {
+        #     my ($soap, $data) = @_;
+        #     return +{
+        #         Result => $data->{parameters}->{x} - $data->{parameters}->{y},
+        #     };
+        # },
         multiply => sub {
             my ($soap, $data) = @_;
             return +{
