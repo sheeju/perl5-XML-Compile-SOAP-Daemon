@@ -15,7 +15,7 @@ use XML::Compile::SOAP11;
 use XML::Compile::SOAP12;
 
 use XML::Compile::Util       'pack_type';
-use XML::Compile::SOAP::Util 'SOAP11ENV';
+use XML::Compile::SOAP::Util qw/XC_DAEMON_NS SOAP11ENV/;
 
 use Log::Report;
 
@@ -24,6 +24,7 @@ dispatcher PERL => 'default', mode => 'VERBOSE';
 my $wsdl_filename = 'calculator.wsdl';
 
 my $wsdl = XML::Compile::WSDL11->new($wsdl_filename);
+$wsdl->addPrefixes(xcd => XC_DAEMON_NS);
 
 my $daemon = XML::Compile::SOAP::Daemon::PSGI->new(
     preprocess => sub {
